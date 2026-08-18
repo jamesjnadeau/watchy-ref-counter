@@ -52,10 +52,19 @@ static const uint32_t BUZZ_CONFIRM_MS = 60;
 // the stock Watchy 7_SEG face ships. This drives the panel border too.
 static const bool DARK_MODE = true;
 
-// After a clock finishes, the sketch waits this long and then does one slow
-// full refresh to clear e-paper ghosting. It is deferred so it never lands in
-// the middle of live play.
-static const uint32_t DEGHOST_DELAY_MS = 3000;
+// How long `00` stays up after a clock expires before the watch drops back to
+// the ready screen. That return is a full refresh, so it doubles as the ghost
+// clear after a run of partial updates - deferred to here deliberately, so the
+// 2.6s stall never lands in the middle of live play.
+//
+// Starting a new clock during this window cancels the return.
+static const uint32_t EXPIRED_HOLD_MS = 3000;
+
+// Clearing with the bottom-left button redraws instantly with a partial
+// refresh so it feels immediate. That leaves ghosting behind, so a full
+// refresh follows once this long has passed with nothing happening. Starting a
+// clock cancels it, so the tidy-up never interrupts play.
+static const uint32_t SCREEN_TIDY_DELAY_MS = 3000;
 
 // --- Power -----------------------------------------------------------------
 // CPU clock while awake. 80 MHz roughly halves current draw versus the 240 MHz

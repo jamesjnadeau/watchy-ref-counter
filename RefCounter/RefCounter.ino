@@ -3,6 +3,7 @@
 //
 //   top right    hold -> start / reset the long clock  (40s by default)
 //   bottom right hold -> start / reset the short clock (25s by default)
+//   bottom left  hold -> clear the clock and go back to the ready screen
 //   top left     hold -> low power mode, hold again to wake
 //
 // A short tap never does anything. Every tunable number lives in settings.h.
@@ -37,6 +38,11 @@ static int64_t startUs = 0;
 // meaningful while state == STATE_EXPIRED.
 static uint32_t returnToIdleAt = 0;
 
+// A manual clear redraws with a fast partial refresh so it feels immediate,
+// then queues the slow ghost-clearing refresh for once things go quiet.
+static bool     tidyPending = false;
+static uint32_t tidyAt      = 0;
+
 static View currentView() {
   View v;
   v.state       = state;
@@ -46,7 +52,8 @@ static View currentView() {
 }
 
 static void enterIdle(bool full) {
-  state = STATE_IDLE;
+  state       = STATE_IDLE;
+  tidyPending = false;
   RefDisplay::render(currentView(), full);
 }
 
@@ -57,9 +64,23 @@ static void startTimer(uint16_t seconds) {
   durationSec = seconds;
   shownSec    = seconds;
   state       = STATE_RUNNING;
+  tidyPending = false;
 
   Buzzer::pulse(BUZZ_CONFIRM_MS);
   RefDisplay::render(currentView(), false);
+}
+
+// Abandon whatever is on the clock and go back to the ready screen. Uses a
+// partial refresh so it responds straight away; the ghosting that leaves is
+// cleaned up by the deferred full refresh queued here.
+static void clearToIdle() {
+  if (state == STATE_IDLE) {
+    return; // already there, so do not spend a refresh saying so
+  }
+  Buzzer::pulse(BUZZ_CONFIRM_MS);
+  enterIdle(false);
+  tidyPending = true;
+  tidyAt      = millis() + SCREEN_TIDY_DELAY_MS;
 }
 
 // Buzz for whatever mark the clock just landed on. Ordering matters: the
@@ -147,6 +168,7 @@ static void idleSleep() {
   gpio_wakeup_enable((gpio_num_t)BTN_LONG_TIMER_PIN, BTN_LIGHT_SLEEP_WAKE_LEVEL);
   gpio_wakeup_enable((gpio_num_t)BTN_SHORT_TIMER_PIN, BTN_LIGHT_SLEEP_WAKE_LEVEL);
   gpio_wakeup_enable((gpio_num_t)BTN_SLEEP_PIN, BTN_LIGHT_SLEEP_WAKE_LEVEL);
+  gpio_wakeup_enable((gpio_num_t)BTN_RESET_PIN, BTN_LIGHT_SLEEP_WAKE_LEVEL);
   esp_sleep_enable_gpio_wakeup();
   // Timer wake as a backstop: if a GPIO wake is ever missed, the cost is one
   // poll interval rather than a watch that ignores its buttons.
@@ -157,6 +179,7 @@ static void idleSleep() {
   gpio_wakeup_disable((gpio_num_t)BTN_LONG_TIMER_PIN);
   gpio_wakeup_disable((gpio_num_t)BTN_SHORT_TIMER_PIN);
   gpio_wakeup_disable((gpio_num_t)BTN_SLEEP_PIN);
+  gpio_wakeup_disable((gpio_num_t)BTN_RESET_PIN);
   esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_TIMER);
   esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_GPIO);
 }
@@ -170,6 +193,15 @@ static void idleTick() {
     // a hold that is already under way.
     if (!busy && (int32_t)(millis() - returnToIdleAt) >= 0) {
       enterIdle(true);
+    } else {
+      delay(BUTTON_POLL_MS);
+    }
+    return;
+  }
+  if (tidyPending) {
+    if (!busy && (int32_t)(millis() - tidyAt) >= 0) {
+      tidyPending = false;
+      RefDisplay::render(currentView(), true);
     } else {
       delay(BUTTON_POLL_MS);
     }
@@ -208,6 +240,10 @@ void loop() {
   }
   if (Buttons::heldFor(Buttons::SHORT_TIMER, TIMER_HOLD_MS)) {
     startTimer(TIMER_SHORT_SECONDS);
+    return;
+  }
+  if (Buttons::heldFor(Buttons::RESET, TIMER_HOLD_MS)) {
+    clearToIdle();
     return;
   }
 

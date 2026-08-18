@@ -190,7 +190,7 @@ void drawFooter(const View &v) {
   const char *hint;
   switch (v.state) {
   case STATE_RUNNING:
-    hint = "HOLD = RESET";
+    hint = "BTM LEFT = CLEAR";
     break;
   case STATE_EXPIRED:
     hint = "TIME EXPIRED";

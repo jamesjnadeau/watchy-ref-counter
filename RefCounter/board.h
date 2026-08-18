@@ -27,18 +27,21 @@
 #endif
 
 // --- Button roles ----------------------------------------------------------
-// Watchy's four buttons, by physical position:
+// Watchy's four buttons, by physical position. Note that MENU is the BOTTOM
+// left button and BACK is the TOP left one, which is the opposite of what the
+// names suggest:
 //
-//     MENU (top left)  ---- +-------+ ---- UP   (top right)
-//                           | 200x  |
-//     BACK (bottom left) -- | 200   | ---- DOWN (bottom right)
-//                           +-------+
+//     BACK (top left)  ----- +-------+ ---- UP   (top right)
+//                            | 200x  |
+//     MENU (bottom left) --- | 200   | ---- DOWN (bottom right)
+//                            +-------+
 //
-// If the buttons on your unit are rotated relative to this, swap the three
-// defines below rather than editing the sketch.
+// If the buttons on your unit sit differently, swap the four defines below
+// rather than editing the sketch.
 #define BTN_LONG_TIMER_PIN  UP_BTN_PIN    // top right    -> long clock (40s)
 #define BTN_SHORT_TIMER_PIN DOWN_BTN_PIN  // bottom right -> short clock (25s)
-#define BTN_SLEEP_PIN       MENU_BTN_PIN  // top left     -> low power mode
+#define BTN_SLEEP_PIN       BACK_BTN_PIN  // top left     -> low power mode
+#define BTN_RESET_PIN       MENU_BTN_PIN  // bottom left  -> clear to ready
 
 // --- Battery ADC -----------------------------------------------------------
 // V3 measures through a 360k/100k divider; the ESP32 boards use a plain 2:1.

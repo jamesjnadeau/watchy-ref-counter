@@ -19,6 +19,7 @@ Button buttons[COUNT] = {
     {BTN_LONG_TIMER_PIN, false, false, 0, 0, false},
     {BTN_SHORT_TIMER_PIN, false, false, 0, 0, false},
     {BTN_SLEEP_PIN, false, false, 0, 0, false},
+    {BTN_RESET_PIN, false, false, 0, 0, false},
 };
 
 bool readPin(uint8_t pin) { return digitalRead(pin) == BTN_PRESSED_LEVEL; }

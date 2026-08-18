@@ -13,6 +13,7 @@ enum Id : uint8_t {
   LONG_TIMER = 0,  // top right
   SHORT_TIMER,     // bottom right
   SLEEP,           // top left
+  RESET,           // bottom left
   COUNT
 };
 

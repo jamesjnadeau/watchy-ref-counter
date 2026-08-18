@@ -35,18 +35,21 @@ wrist.
 Watchy's four buttons, by physical position:
 
 ```
-   MENU (top left)  ----+---------+---- UP   (top right)
+   BACK (top left)  ----+---------+---- UP   (top right)
                         |  200 x  |
-   BACK (bottom left) --|  200    |---- DOWN (bottom right)
+   MENU (bottom left) --|  200    |---- DOWN (bottom right)
                         +---------+
 ```
+
+Watch out for the names: on Watchy, **MENU is the bottom-left button and BACK
+is the top-left one**, which is the opposite of what they sound like.
 
 | Button | Action | Default hold |
 | --- | --- | --- |
 | Top right | Start, or reset, the **long** clock (40s) | 0.5s |
 | Bottom right | Start, or reset, the **short** clock (25s) | 0.5s |
 | Top left | Enter low power mode; hold again to wake | 1.0s |
-| Bottom left | Unused | — |
+| Bottom left | Clear the clock and return to Ready | 0.5s |
 
 **A short tap does nothing.** Every action needs a deliberate hold, so a button
 brushed against a sleeve mid-game cannot reset the play clock. A short
@@ -113,9 +116,9 @@ same folder. One copy of the source, two build systems.
 **The sketch does not subclass `Watchy`.** The base class is built around
 "wake, draw one frame, deep sleep" — `Watchy::init()` ends in `deepSleep()` and
 never returns. A clock that ticks every second has to stay awake and own its
-own loop, so this sketch borrows the library's display driver, pin map and
-DSEG7 font and drives them directly. It reuses `Watchy::display` rather than
-constructing a second 5KB framebuffer.
+own loop, so this sketch borrows the library's display driver and pin map and
+drives them directly. It reuses `Watchy::display` rather than constructing a
+second 5KB framebuffer.
 
 **Digits are drawn, not typed.** The countdown is seven filled rectangles per
 digit rather than a font glyph. That makes the exact bounding box of the
@@ -136,10 +139,18 @@ resizing the digits is a one-line change.
 GxEPD2's `displayWindow()`, so only 54% of the panel is driven — the header,
 footer and battery are left standing.
 
-Partial refreshes leave faint ghosting, and the one full refresh that clears it
-is the return to Ready three seconds after a clock expires. Those are the same
-event on purpose: the screen has to be fully rewritten anyway, and by then play
-has stopped, so the 2.6s stall never lands mid-down.
+Partial refreshes leave faint ghosting, and only a full refresh clears it. Both
+routes back to Ready arrange for one, but neither pays for it up front:
+
+- **A clock expires.** `00` holds for three seconds, then the return to Ready
+  is itself the full refresh. One redraw does both jobs, and by then play has
+  stopped.
+- **You clear it by hand.** The return is a *partial* refresh, so the button
+  responds in ~400ms rather than freezing for 2.6s. The full refresh is queued
+  for `SCREEN_TIDY_DELAY_MS` later and only fires once nothing is happening;
+  starting a clock cancels it.
+
+Either way the 2.6s stall never lands mid-down.
 
 **Power.** The CPU drops to 80MHz, and the watch light-sleeps between button
 polls whenever no clock is running, waking on a button GPIO with a 250ms timer
@@ -176,11 +187,10 @@ black; there is no inversion in the display driver itself.
 Clock values are limited to 1–99, because the display shows two digits.
 
 Change a value, reflash. There is no on-device settings menu — one fewer thing
-to fat-finger during a game. If you want one, the bottom-left button is
-unassigned and is the natural place to hang it.
+to fat-finger during a game.
 
 If the buttons on your unit sit in different positions than the diagram above,
-swap the three role defines at the bottom of
+swap the four role defines at the bottom of
 [`RefCounter/board.h`](RefCounter/board.h) rather than editing the sketch.
 
 ## Installing
@@ -242,11 +252,14 @@ Watchy library links as a whole.
 
 ### If upload fails
 
-Hold the **bottom-left (BACK)** button while plugging the watch in, or while
-the IDE reports "Connecting…", to force the ESP32 into bootloader mode.
-
 The watch must be awake to enumerate over USB. If it is in low power mode, hold
-the top-left button first.
+the top-left button to wake it first.
+
+On a **V3**, hold the **top-right (UP)** button while plugging in to force the
+bootloader — on that revision UP is GPIO 0, the ESP32-S3 strapping pin. The
+ESP32 revisions have no button on GPIO 0 and rely on the USB serial chip's
+auto-reset instead, so there is no button to hold; if auto-reset is not
+working, it is a cable or port problem rather than a timing one.
 
 ## Known limitations
 
