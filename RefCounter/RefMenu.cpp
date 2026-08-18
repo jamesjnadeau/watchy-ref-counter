@@ -42,6 +42,7 @@ auto &display = RefPanel::display;
 // switch. The widest this gets is "Sport: Base NCAA", 16 glyphs.
 enum Item : uint8_t {
   ITEM_SPORT,
+  ITEM_EDIT_CUSTOM,
   ITEM_ABOUT,
   ITEM_BUZZ,
   ITEM_SET_TIME,
@@ -68,6 +69,7 @@ uint8_t menuTop = 0;
 void itemLabel(uint8_t i, char *buf, size_t n) {
   switch (i) {
   case ITEM_SPORT:    snprintf(buf, n, "Sport: %s", RefSport::active().name); break;
+  case ITEM_EDIT_CUSTOM: snprintf(buf, n, "Edit Custom"); break;
   case ITEM_ABOUT:    snprintf(buf, n, "About"); break;
   case ITEM_BUZZ:     snprintf(buf, n, "Vibrate Motor"); break;
   case ITEM_SET_TIME: snprintf(buf, n, "Set Time"); break;
@@ -553,6 +555,114 @@ void setTime(RefClock &refClock) {
   refClock.setLocal(t);
 }
 
+enum CustomField : int8_t {
+  CF_LONG,
+  CF_SHORT,
+  CF_WARN,
+  CF_WARN2,
+  CF_FINAL,
+  CF_COUNT,
+};
+
+const char *customFieldLabel(int8_t f) {
+  switch (f) {
+  case CF_LONG:  return "Long";
+  case CF_SHORT: return "Short";
+  case CF_WARN:  return "Warn 1";
+  case CF_WARN2: return "Warn 2";
+  default:       return "Final";
+  }
+}
+
+// Edit the Custom preset's five numbers. MENU steps forward through the fields
+// and commits past the last one, BACK steps back, UP and DOWN change the value
+// under the cursor, and the field being edited blinks -- the same interaction
+// as setTime above, deliberately.
+//
+// Values are text rather than seven-segment digits: five labelled rows are far
+// more readable than five bare numbers, and it keeps new segment geometry out
+// of the menu.
+//
+// This does not select Custom. The user picks it from the Sport screen, which
+// keeps "edit" and "use" separate the way the zone picker keeps them.
+void editCustom() {
+  const RefSport::Preset c = RefSport::custom();
+  uint16_t value[CF_COUNT] = {c.longSeconds, c.shortSeconds, c.warnAtSeconds,
+                              c.warn2AtSeconds, c.finalCountdownFrom};
+
+  int8_t field = CF_LONG;
+  bool   blink = false;
+
+  claimButtons();
+  display.setFullWindow();
+
+  // No delay in this loop and no debounce: the partial refresh at the bottom
+  // takes most of half a second, which is what paces it. Same as setTime.
+  while (true) {
+    if (pressed(PIN_BTN_MENU)) {
+      field++;
+      if (field >= CF_COUNT) {
+        break;
+      }
+    }
+    if (pressed(PIN_BTN_BACK) && field != CF_LONG) {
+      field--;
+    }
+
+    blink = !blink;
+
+    const int delta = pressed(PIN_BTN_DOWN) ? 1 : (pressed(PIN_BTN_UP) ? -1 : 0);
+    if (delta != 0) {
+      blink = true; // never hide the field the user is actively changing
+      // The two clocks bottom out at 1; a mark of 0 means off, so those wrap
+      // through zero.
+      const int lo = (field == CF_LONG || field == CF_SHORT)
+                         ? (int)RefSport::MIN_CLOCK_SECONDS
+                         : 0;
+      int v = (int)value[field] + delta;
+      if (v > (int)RefSport::MAX_SECONDS) {
+        v = lo;
+      } else if (v < lo) {
+        v = (int)RefSport::MAX_SECONDS;
+      }
+      value[field] = (uint16_t)v;
+    }
+
+    display.fillScreen(THEME_BG);
+    display.setFont(&FreeMonoBold9pt7b);
+
+    display.setTextColor(THEME_FG);
+    display.setCursor(2, 20);
+    display.print("EDIT CUSTOM");
+    display.drawFastHLine(0, 28, DISPLAY_WIDTH, THEME_FG);
+
+    for (int8_t f = 0; f < CF_COUNT; f++) {
+      const int16_t yPos = 52 + 24 * f;
+
+      display.setTextColor(THEME_FG);
+      display.setCursor(2, yPos);
+      display.print(customFieldLabel(f));
+
+      char num[8];
+      snprintf(num, sizeof(num), "%3u", (unsigned)value[f]);
+      // Three glyphs at 11 pixels each, right-aligned against the edge.
+      display.setCursor(DISPLAY_WIDTH - 2 - 33, yPos);
+      display.setTextColor(f == field && !blink ? THEME_BG : THEME_FG);
+      display.print(num);
+    }
+
+    display.setTextColor(THEME_FG);
+    display.setCursor(2, 194);
+    display.print("MENU/BACK to move");
+
+    display.display(true); // partial refresh
+  }
+
+  RefSport::setCustom(value[CF_LONG], value[CF_SHORT], value[CF_WARN],
+                      value[CF_WARN2], value[CF_FINAL]);
+  Buzzer::pulse(BUZZ_CONFIRM_MS);
+}
+
 void portalCallback(WiFiManager *) {
   beginTextScreen();
   display.setCursor(0, 30);
@@ -659,7 +769,8 @@ void open(RefClock &refClock) {
       // redraw rather than the 2.6s full one every other entry earns.
       bool quickRedraw = false;
       switch (index) {
-      case ITEM_SPORT:    pickSport(); break;
+      case ITEM_SPORT:       pickSport(); break;
+      case ITEM_EDIT_CUSTOM: editCustom(); break;
       case ITEM_ABOUT:    showAbout(refClock); holdResult = true; break;
       case ITEM_BUZZ:     showBuzz(); break;
       case ITEM_SET_TIME: setTime(refClock); break;
