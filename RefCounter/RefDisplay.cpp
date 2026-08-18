@@ -90,22 +90,19 @@ const uint8_t DIGIT_SEGMENTS[10] = {
 void drawDigit(int16_t x, int16_t y, uint8_t value, const SegStyle &s,
                uint16_t colour) {
   const uint8_t on = DIGIT_SEGMENTS[value % 10];
+  const SegRows r = layoutRows(s);
 
-  const int16_t t     = s.t;
-  const int16_t midY  = (s.h - t) / 2; // top edge of the middle bar
-  const int16_t upH   = midY - t;      // height of the upper verticals
-  const int16_t lowY  = midY + t;      // top of the lower verticals
-  const int16_t lowH  = s.h - t - lowY;
-  const int16_t barW  = s.w - 2 * t;   // length of the horizontal bars
+  const int16_t t    = s.t;
+  const int16_t barW = s.w - 2 * t;   // length of the horizontal bars
   const int16_t right = x + s.w - t;
 
   if (on & SEG_A) display.fillRect(x + t, y, barW, t, colour);
-  if (on & SEG_B) display.fillRect(right, y + t, t, upH, colour);
-  if (on & SEG_C) display.fillRect(right, y + lowY, t, lowH, colour);
+  if (on & SEG_B) display.fillRect(right, y + r.upY, t, r.upH, colour);
+  if (on & SEG_C) display.fillRect(right, y + r.lowY, t, r.lowH, colour);
   if (on & SEG_D) display.fillRect(x + t, y + s.h - t, barW, t, colour);
-  if (on & SEG_E) display.fillRect(x, y + lowY, t, lowH, colour);
-  if (on & SEG_F) display.fillRect(x, y + t, t, upH, colour);
-  if (on & SEG_G) display.fillRect(x + t, y + midY, barW, t, colour);
+  if (on & SEG_E) display.fillRect(x, y + r.lowY, t, r.lowH, colour);
+  if (on & SEG_F) display.fillRect(x, y + r.upY, t, r.upH, colour);
+  if (on & SEG_G) display.fillRect(x + t, y + r.midY, barW, t, colour);
 }
 
 void drawPair(int16_t x, int16_t y, uint16_t value, const SegStyle &s,
@@ -120,14 +117,11 @@ void drawPair(int16_t x, int16_t y, uint16_t value, const SegStyle &s,
 // The skinny leading "1": segments b and c only, at the same heights drawDigit
 // puts them, but one thickness wide instead of a whole digit.
 void drawOneBar(int16_t x, int16_t y, const SegStyle &s, uint16_t colour) {
-  const int16_t t    = s.t;
-  const int16_t midY = (s.h - t) / 2;
-  const int16_t upH  = midY - t;
-  const int16_t lowY = midY + t;
-  const int16_t lowH = s.h - t - lowY;
+  const SegRows r = layoutRows(s);
+  const int16_t t = s.t;
 
-  display.fillRect(x, y + t, t, upH, colour);
-  display.fillRect(x, y + lowY, t, lowH, colour);
+  display.fillRect(x, y + r.upY, t, r.upH, colour);
+  display.fillRect(x, y + r.lowY, t, r.lowH, colour);
 }
 
 // A countdown value, 0..199, centred horizontally. Where each glyph goes is

@@ -1,5 +1,15 @@
 #include "RefSegments.h"
 
+SegRows layoutRows(const SegStyle &s) {
+  SegRows r = {};
+  r.midY = (s.h - s.t) / 2;
+  r.upY  = s.t;
+  r.upH  = r.midY - s.t;
+  r.lowY = r.midY + s.t;
+  r.lowH = s.h - s.t - r.lowY;
+  return r;
+}
+
 CountLayout layoutCount(uint16_t value, const SegStyle &s, int16_t screenW) {
   if (value > SEG_MAX_VALUE) {
     value = SEG_MAX_VALUE;

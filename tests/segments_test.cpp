@@ -79,6 +79,41 @@ int main() {
     expectFits(what, layoutCount(v, BIG, SCREEN_W), BIG);
   }
 
+  // Segment row arithmetic must stay in sync between drawDigit and drawOneBar.
+  // These are the concrete numbers BIG and SMALL use.
+  SegRows bigRows = layoutRows(BIG);
+  expectEq("BIG: midY", bigRows.midY, 50);
+  expectEq("BIG: upY", bigRows.upY, 15);
+  expectEq("BIG: upH", bigRows.upH, 35);
+  expectEq("BIG: lowY", bigRows.lowY, 65);
+  expectEq("BIG: lowH", bigRows.lowH, 36);
+
+  SegRows smallRows = layoutRows(SMALL);
+  expectEq("SMALL: midY", smallRows.midY, 22);
+  expectEq("SMALL: upY", smallRows.upY, 8);
+  expectEq("SMALL: upH", smallRows.upH, 14);
+  expectEq("SMALL: lowY", smallRows.lowY, 30);
+  expectEq("SMALL: lowH", smallRows.lowH, 14);
+
+  // The critical invariants: upper run ends where middle begins, lower run
+  // starts one thickness below and ends one above the digit bottom.
+  auto checkInvariant = [](const char *name, const SegStyle &s, const SegRows &r) {
+    if (r.upY + r.upH != r.midY) {
+      printf("FAIL %-44s upper run doesn't end at midY\n", name);
+      failures++;
+    } else if (r.lowY != r.midY + s.t) {
+      printf("FAIL %-44s lower run doesn't start at midY+t\n", name);
+      failures++;
+    } else if (r.lowY + r.lowH != s.h - s.t) {
+      printf("FAIL %-44s lower run doesn't end at h-t\n", name);
+      failures++;
+    } else {
+      printf("ok   %-44s row invariants hold\n", name);
+    }
+  };
+  checkInvariant("BIG row invariants", BIG, bigRows);
+  checkInvariant("SMALL row invariants", SMALL, smallRows);
+
   printf("\n%s (%d failures)\n", failures ? "FAILED" : "PASSED", failures);
   return failures != 0;
 }

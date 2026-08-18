@@ -22,6 +22,17 @@ struct SegStyle {
   int16_t gap; // space between adjacent glyphs
 };
 
+// The vertical extents of a digit's segments, all derived from the style.
+// Shared so the standalone hundreds bar and the full digits cannot drift out
+// of alignment: both ask for the same rows rather than each recomputing them.
+struct SegRows {
+  int16_t midY; // top edge of the middle bar (segment g)
+  int16_t upY;  // top edge of the upper verticals (segments b, f)
+  int16_t upH;  // their height
+  int16_t lowY; // top edge of the lower verticals (segments c, e)
+  int16_t lowH; // their height
+};
+
 struct CountLayout {
   bool    hundreds; // draw the skinny leading 1
   int16_t oneX;     // left edge of that bar; ignore when !hundreds
@@ -34,6 +45,9 @@ struct CountLayout {
 
 // Largest value the layout can draw. Anything above is clamped to it.
 static const uint16_t SEG_MAX_VALUE = 199;
+
+// Compute the vertical extents of seven-segment rows for a given style.
+SegRows layoutRows(const SegStyle &s);
 
 // Lay `value` out horizontally centred on a `screenW` wide panel.
 CountLayout layoutCount(uint16_t value, const SegStyle &s, int16_t screenW);
