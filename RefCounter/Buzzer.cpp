@@ -5,17 +5,17 @@
 namespace Buzzer {
 
 void begin() {
-  pinMode(VIB_MOTOR_PIN, OUTPUT);
-  digitalWrite(VIB_MOTOR_PIN, LOW);
+  pinMode(PIN_VIB_MOTOR, OUTPUT);
+  digitalWrite(PIN_VIB_MOTOR, LOW);
 }
 
 void pulse(uint32_t onMs) {
   if (onMs == 0) {
     return;
   }
-  digitalWrite(VIB_MOTOR_PIN, HIGH);
+  digitalWrite(PIN_VIB_MOTOR, HIGH);
   delay(onMs);
-  digitalWrite(VIB_MOTOR_PIN, LOW);
+  digitalWrite(PIN_VIB_MOTOR, LOW);
 }
 
 void pulse(uint8_t count, uint32_t onMs, uint32_t gapMs) {
@@ -27,6 +27,6 @@ void pulse(uint8_t count, uint32_t onMs, uint32_t gapMs) {
   }
 }
 
-void off() { digitalWrite(VIB_MOTOR_PIN, LOW); }
+void off() { digitalWrite(PIN_VIB_MOTOR, LOW); }
 
 } // namespace Buzzer

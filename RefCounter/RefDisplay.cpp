@@ -1,20 +1,19 @@
 #include "RefDisplay.h"
 
-#include <Fonts/FreeMonoBold18pt7b.h>
-#include <Fonts/FreeMonoBold9pt7b.h>
-
+#include "RefPanel.h"
 #include "board.h"
 #include "settings.h"
+
+extern const uint16_t THEME_FG = DARK_MODE ? GxEPD_WHITE : GxEPD_BLACK;
+extern const uint16_t THEME_BG = DARK_MODE ? GxEPD_BLACK : GxEPD_WHITE;
 
 namespace RefDisplay {
 namespace {
 
-// The Watchy library already owns a full-screen framebuffer. Reuse it rather
-// than paying another 5KB for a second one.
-auto &display = Watchy::display;
+auto &display = RefPanel::display;
 
-const uint16_t FG = DARK_MODE ? GxEPD_WHITE : GxEPD_BLACK;
-const uint16_t BG = DARK_MODE ? GxEPD_BLACK : GxEPD_WHITE;
+const uint16_t &FG = THEME_FG;
+const uint16_t &BG = THEME_BG;
 
 // --- Layout, in pixels on the 200x200 panel --------------------------------
 const int16_t SCREEN_W = DISPLAY_WIDTH;
@@ -38,6 +37,13 @@ const int16_t BATT_H = 12;
 // span x 22..178 and y 44..160. GxEPD2 rounds x and w out to a multiple of 8
 // anyway, so they are pre-aligned here to keep the drawn and refreshed areas
 // honest with each other.
+// The header strip, refreshed on its own when the minute rolls over. Covers
+// the clock, the battery gauge and the rule underneath them.
+const int16_t HEADER_WIN_X = 0;
+const int16_t HEADER_WIN_Y = 0;
+const int16_t HEADER_WIN_W = 200;
+const int16_t HEADER_WIN_H = 40;
+
 const int16_t DIGITS_WIN_X = 16;
 const int16_t DIGITS_WIN_Y = 40;
 const int16_t DIGITS_WIN_W = 176;
@@ -84,7 +90,8 @@ const uint8_t DIGIT_SEGMENTS[10] = {
     /* 9 */ SEG_A | SEG_B | SEG_C | SEG_D | SEG_F | SEG_G,
 };
 
-void drawDigit(int16_t x, int16_t y, uint8_t value, const SegStyle &s) {
+void drawDigit(int16_t x, int16_t y, uint8_t value, const SegStyle &s,
+               uint16_t colour) {
   const uint8_t on = DIGIT_SEGMENTS[value % 10];
 
   const int16_t t     = s.t;
@@ -95,27 +102,31 @@ void drawDigit(int16_t x, int16_t y, uint8_t value, const SegStyle &s) {
   const int16_t barW  = s.w - 2 * t;   // length of the horizontal bars
   const int16_t right = x + s.w - t;
 
-  if (on & SEG_A) display.fillRect(x + t, y, barW, t, FG);
-  if (on & SEG_B) display.fillRect(right, y + t, t, upH, FG);
-  if (on & SEG_C) display.fillRect(right, y + lowY, t, lowH, FG);
-  if (on & SEG_D) display.fillRect(x + t, y + s.h - t, barW, t, FG);
-  if (on & SEG_E) display.fillRect(x, y + lowY, t, lowH, FG);
-  if (on & SEG_F) display.fillRect(x, y + t, t, upH, FG);
-  if (on & SEG_G) display.fillRect(x + t, y + midY, barW, t, FG);
+  if (on & SEG_A) display.fillRect(x + t, y, barW, t, colour);
+  if (on & SEG_B) display.fillRect(right, y + t, t, upH, colour);
+  if (on & SEG_C) display.fillRect(right, y + lowY, t, lowH, colour);
+  if (on & SEG_D) display.fillRect(x + t, y + s.h - t, barW, t, colour);
+  if (on & SEG_E) display.fillRect(x, y + lowY, t, lowH, colour);
+  if (on & SEG_F) display.fillRect(x, y + t, t, upH, colour);
+  if (on & SEG_G) display.fillRect(x + t, y + midY, barW, t, colour);
+}
+
+void drawPair(int16_t x, int16_t y, uint16_t value, const SegStyle &s,
+              uint16_t colour) {
+  if (value > 99) {
+    value = 99;
+  }
+  drawDigit(x, y, (uint8_t)(value / 10), s, colour);
+  drawDigit(x + s.w + s.gap, y, (uint8_t)(value % 10), s, colour);
 }
 
 // A zero-padded two digit value, centred horizontally.
 void drawValue(uint16_t value, int16_t y, const SegStyle &s) {
-  if (value > 99) {
-    value = 99;
-  }
-  const int16_t x = (SCREEN_W - (s.w * 2 + s.gap)) / 2;
-  drawDigit(x, y, (uint8_t)(value / 10), s);
-  drawDigit(x + s.w + s.gap, y, (uint8_t)(value % 10), s);
+  drawPair((SCREEN_W - (s.w * 2 + s.gap)) / 2, y, value, s, FG);
 }
 
 float batteryVolts() {
-  return (analogReadMilliVolts(BATT_ADC_PIN) / 1000.0f) * BATT_DIVIDER;
+  return (analogReadMilliVolts(PIN_BATT_ADC) / 1000.0f) * BATT_DIVIDER;
 }
 
 // Draw `text` horizontally centred on `centreX`, at the given baseline.
@@ -145,22 +156,22 @@ void drawBattery() {
 }
 
 void drawHeader(const View &v) {
-  char label[16];
-  switch (v.state) {
-  case STATE_RUNNING:
-    snprintf(label, sizeof(label), "%u SEC", v.durationSec);
-    break;
-  case STATE_EXPIRED:
-    snprintf(label, sizeof(label), "TIME");
-    break;
-  default:
-    snprintf(label, sizeof(label), "PLAY CLOCK");
-    break;
+  char clock[8];
+  if (!v.clockValid) {
+    snprintf(clock, sizeof(clock), "--:--");
+  } else if (CLOCK_24_HOUR) {
+    snprintf(clock, sizeof(clock), "%02u:%02u", v.hour, v.minute);
+  } else {
+    uint8_t h = v.hour % 12;
+    if (h == 0) {
+      h = 12;
+    }
+    snprintf(clock, sizeof(clock), "%u:%02u", h, v.minute);
   }
 
   display.setFont(&FreeMonoBold9pt7b);
   display.setCursor(4, HEADER_BASELINE);
-  display.print(label);
+  display.print(clock);
 
   drawBattery();
   display.drawFastHLine(0, HEADER_RULE_Y, SCREEN_W, FG);
@@ -205,16 +216,24 @@ void drawFooter(const View &v) {
   printCentred(hint, FOOTER_BASELINE);
 }
 
+const SegStyle STYLE_MED = {40, 66, 10, 10};
+
 } // namespace
 
-void begin() {
-  display.epd2.initWatchy();
-  display.setTextColor(FG);
-  display.setTextWrap(false);
-  display.epd2.setDarkBorder(DARK_MODE);
+extern const int16_t DIGIT_PAIR_W = STYLE_MED.w * 2 + STYLE_MED.gap;
+extern const int16_t DIGIT_PAIR_H = STYLE_MED.h;
+
+void drawDigitPair(int16_t x, int16_t y, uint8_t value, bool lit) {
+  drawPair(x, y, value, STYLE_MED, lit ? THEME_FG : THEME_BG);
 }
 
-void render(const View &v, bool full) {
+void begin() {
+  RefPanel::begin();
+  display.setTextColor(FG);
+  display.setTextWrap(false);
+}
+
+void paint(const View &v) {
   display.setFullWindow();
   display.fillScreen(BG);
   display.setTextColor(FG);
@@ -222,9 +241,19 @@ void render(const View &v, bool full) {
   drawHeader(v);
   drawBody(v);
   drawFooter(v);
+}
 
+void render(const View &v, bool full) {
+  paint(v);
   // GxEPD2 takes "partial refresh?" here, so a full refresh is display(false).
   display.display(!full);
+}
+
+void renderHeader(const View &v) {
+  display.setTextColor(FG);
+  display.fillRect(HEADER_WIN_X, HEADER_WIN_Y, HEADER_WIN_W, HEADER_WIN_H, BG);
+  drawHeader(v);
+  display.displayWindow(HEADER_WIN_X, HEADER_WIN_Y, HEADER_WIN_W, HEADER_WIN_H);
 }
 
 void renderDigits(const View &v) {

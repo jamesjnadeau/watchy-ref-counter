@@ -30,6 +30,13 @@ A purpose-built play clock for officiating football, running on a
 7-segment digits, and a buzz pattern you can follow without looking at your
 wrist.
 
+**This repo stands alone.** It does not link against the
+[Watchy library](https://github.com/sqfmi/Watchy); the panel is driven through
+GxEPD2, the RTC chips directly over I2C, and NTP through the ESP32 core's own
+SNTP client. Where the behaviour follows that firmware — the menu, the
+set-time screen, the pin map — the comments credit it, but none of its code is
+here. It builds with the reference repo nowhere on disk.
+
 ## Controls
 
 Watchy's four buttons, by physical position:
@@ -49,7 +56,11 @@ is the top-left one**, which is the opposite of what they sound like.
 | Top right | Start, or reset, the **long** clock (40s) | 0.5s |
 | Bottom right | Start, or reset, the **short** clock (25s) | 0.5s |
 | Top left | Enter low power mode; hold again to wake | 1.0s |
-| Bottom left | Clear the clock and return to Ready | 0.5s |
+| Bottom left | On Ready, open the settings menu; otherwise clear the clock | 0.5s |
+
+The bottom-left button does two jobs because on the Ready screen there is no
+clock to clear. Hold it there and you get the reference Watchy menu; hold it
+while a clock is up and it clears back to Ready.
 
 **A short tap does nothing.** Every action needs a deliberate hold, so a button
 brushed against a sleeve mid-game cannot reset the play clock. A short
@@ -80,6 +91,9 @@ from the timestamp the clock started at rather than accumulated tick by tick.
 
 ## Screens
 
+Every screen carries the wall clock at the top left and a battery gauge at the
+top right.
+
 **Ready** — shown at boot and on wake. Both configured clocks stacked to line
 up with the two right-hand buttons that start them.
 
@@ -92,6 +106,48 @@ Starting a new clock during that window cancels the return.
 
 **Sleeping** — low power mode.
 
+**Menu** — held open from Ready. Navigation follows the reference: UP/DOWN to
+move, MENU (bottom left) to select, BACK (top left) to leave. It also drops
+back to Ready by itself after `MENU_TIMEOUT_MS`, so a menu opened by accident
+cannot strand you mid-game.
+
+| Entry | What it does |
+| --- | --- |
+| About | Version, board revision, battery, time, uptime, last sync, RTC type |
+| Vibrate Motor | Buzz test |
+| Set Time | Set the RTC by hand, no WiFi needed |
+| Setup WiFi | Captive portal to save credentials |
+| Sync NTP | Connect and set the RTC from `NTP_SERVER` |
+
+There is no "Show Accelerometer". The reference has one, but nothing on a play
+clock reads the sensor, and leaving it out means the BMA423 is never powered
+up at all.
+
+## Timekeeping
+
+The time comes from the watch's RTC chip, which `RefRtc` probes for at boot —
+DS3231 at 0x68 on V1.0, PCF8563 at 0x51 on V1.5 and V2, and on V3 the
+ESP32-S3's own 32kHz-backed clock. It keeps running through low power mode and
+through a reflash, so the watch only needs setting once. The About screen
+reports which one was found.
+
+Drift is handled two ways. **Set Time** sets it by hand. **Sync NTP** sets it
+from the internet, and the same sync also runs automatically every
+`NTP_RESYNC_HOURS` (24 by default) once WiFi credentials have been saved. A
+PCF8563 drifts roughly a minute a month; a daily sync keeps that under a
+second. The DS3231 in V1.0 is temperature compensated and drifts far less.
+
+An automatic sync blocks for several seconds while the radio comes up, so it is
+held off until the watch has been left untouched for `AUTO_SYNC_IDLE_MS` (60s),
+and it never runs while a clock is counting. Set `NTP_RESYNC_HOURS` to 0 to
+only ever sync by hand.
+
+The header clock is repainted on its own partial window when the minute rolls
+over, so keeping it live costs one ~400ms refresh a minute rather than a whole
+screen. It is deliberately **not** updated while a clock is counting down: the
+tick path stays reserved for the countdown, so the time can sit up to 40s stale
+mid-play and catches up as soon as the clock stops.
+
 ## Repo structure
 
 ```
@@ -101,11 +157,31 @@ watchy-ref-counter/
 └── RefCounter/        the sketch (also a valid Arduino IDE sketch folder)
     ├── RefCounter.ino main loop and the IDLE/RUNNING/EXPIRED/SLEEPING states
     ├── settings.h     every tunable number, and nothing else
-    ├── board.h        per-revision differences: button polarity and roles
+    ├── board.h        the pin map, per revision, and button polarity
     ├── Buttons.h/.cpp debounced reads with one-shot hold detection
     ├── Buzzer.h/.cpp  vibration motor
-    └── RefDisplay.h/.cpp  screen layout and e-paper refresh strategy
+    ├── RefPanel.h/.cpp    the GxEPD2 panel instance and its pins
+    ├── RefDisplay.h/.cpp  screen layout and e-paper refresh strategy
+    ├── RefRtc.h/.cpp      DS3231 / PCF8563 / ESP32-S3 clock, over I2C
+    ├── RefClock.h/.cpp    timekeeping, NTP sync, battery, board revision
+    └── RefMenu.h/.cpp     the settings menu
 ```
+
+### Dependencies
+
+Three libraries, all from the registry:
+
+| Library | For |
+| --- | --- |
+| GxEPD2 | the GDEH0154D67 panel, including fast partial update |
+| Adafruit GFX | fonts and primitives |
+| WiFiManager | the captive portal behind "Setup WiFi" |
+
+Everything else is either this project's own or comes with the ESP32 Arduino
+core. Notably there is **no RTC library**: the DS3231 and PCF8563 are a handful
+of BCD registers each, and talking to them directly avoids two dependencies
+that both caused trouble — one whose `master` no longer compiles against a
+current core, and one that `#define`s `i2cRead` and `i2cWrite` as bare macros.
 
 The folder is named `RefCounter/` so it satisfies the Arduino IDE's rule that a
 sketch folder match its `.ino`, while `platformio.ini` points `src_dir` at the
@@ -113,12 +189,15 @@ same folder. One copy of the source, two build systems.
 
 ### Design notes
 
-**The sketch does not subclass `Watchy`.** The base class is built around
-"wake, draw one frame, deep sleep" — `Watchy::init()` ends in `deepSleep()` and
-never returns. A clock that ticks every second has to stay awake and own its
-own loop, so this sketch borrows the library's display driver and pin map and
-drives them directly. It reuses `Watchy::display` rather than constructing a
-second 5KB framebuffer.
+**Why none of the Watchy library is used.** Its `Watchy::init()` is the whole
+lifecycle — wake, draw one frame, deep sleep — and it ends in `deepSleep()`
+without returning, which cannot work for a clock that ticks every second. That
+alone forced an own main loop. Reusing just the menu then proved impossible
+too: `Watchy::showMenu()` hard-codes six entries, and `showBuzz()`, `setTime()`
+and `showSyncNTP()` each finish by redrawing it, so "Show Accelerometer" could
+not be dropped without it flashing back for 2.6s after most actions. With the
+menu written here anyway, the remaining pieces — a GxEPD2 wrapper, two RTC
+chips and an NTP call — were smaller than the dependency they justified.
 
 **Digits are drawn, not typed.** The countdown is seven filled rectangles per
 digit rather than a font glyph. That makes the exact bounding box of the
@@ -178,7 +257,13 @@ static const uint16_t WARNING_AT_SECONDS  = 10;   // early warning mark
 static const uint8_t  WARNING_BUZZ_COUNT  = 1;    // buzzes at that mark
 static const uint16_t FINAL_COUNTDOWN_FROM = 5;   // buzz each of the last N
 static const bool     DARK_MODE           = false; // false = black on white
+static const bool     CLOCK_24_HOUR       = false;
+static const long     GMT_OFFSET_SECONDS  = -5L * 3600L; // your timezone
+static const uint32_t NTP_RESYNC_HOURS    = 24;   // 0 = only sync by hand
 ```
+
+`GMT_OFFSET_SECONDS` is the one you must set — it includes daylight saving, so
+it needs changing twice a year. There is no timezone database on the watch.
 
 `DARK_MODE` flips the whole theme, panel border included. The stock Watchy
 `7_SEG` face ships with its own `DARKMODE true`, which is why it is white on
@@ -200,32 +285,16 @@ swap the four role defines at the bottom of
 Requires [PlatformIO Core](https://platformio.org/install/cli) or the VS Code
 extension.
 
-This repo expects the Watchy library checked out beside it:
-
-```bash
-git clone https://github.com/sqfmi/Watchy.git ../Watchy
-```
-
-To build against upstream instead, change `lib_deps` in `platformio.ini` to
-`https://github.com/sqfmi/Watchy.git`.
-
-Plug the watch in, then build and flash. Pick the env for your revision —
+Nothing to check out first — the three libraries are pulled from the registry
+on the first build. Plug the watch in, then build and flash. Pick the env for your revision —
 `watchy_v2` (the default), `watchy_v15`, `watchy_v10`, or `watchy_v3`:
 
 ```bash
 pio run -e watchy_v2 -t upload
 ```
 
-Everything else — the ESP32 toolchain, GxEPD2, Adafruit GFX — is pulled in
-automatically on the first build. The first one downloads about 1.5GB of
-toolchain and takes a few minutes; later builds take under a minute.
-
-One dependency is pinned on purpose. Watchy's `library.json` asks for
-`orbitalair/Rtc_Pcf8563.git#master`, and that master has since grown a
-`Rtc_Pcf8563(WireBase&)` constructor referencing a type the ESP32 core does not
-have, so it no longer compiles. `platformio.ini` pins the registry build
-instead. Nothing here touches the RTC — it only has to compile because the
-Watchy library links as a whole.
+The first build downloads about 1.5GB of ESP32 toolchain and takes a few
+minutes; later builds take under a minute.
 
 ### Option B — Arduino IDE
 
@@ -233,19 +302,29 @@ Watchy library links as a whole.
    `https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json`
    then install **esp32** (2.0.5 or newer) from *Tools → Board → Boards Manager*.
 
-2. **Library.** *Tools → Manage Libraries*, search for **Watchy**, install it
-   along with its dependencies when prompted. This also pulls in GxEPD2 and
-   Adafruit GFX.
+2. **Libraries.** *Tools → Manage Libraries*, then install **GxEPD2**,
+   **Adafruit GFX Library** and **WiFiManager** (tzapu). Accept the dependency
+   prompts. Do *not* install the Watchy library; this sketch does not use it.
 
-3. **Board target.** *Tools → Board → ESP32 Arduino → **Watchy***, then
-   *Tools → Revision* → **Watchy v2.0**, **v1.5** or **v1.0** to match your
-   hardware. Do not use a generic ESP32 Dev Module: the board variant is what
-   supplies the pin map, and the revision menu is what selects `UP_BTN_PIN` and
-   `BATT_ADC_PIN`, which differ between revisions.
+3. **Board target.** *Tools → Board → ESP32 Arduino* → **ESP32 Dev Module**
+   for V1.0/V1.5/V2, or **ESP32S3 Dev Module** for V3. The pin map is this
+   project's own, so the board only has to be the right chip.
 
-   For a **Watchy V3**, the ESP32-S3 board: pick *ESP32S3 Dev Module* instead.
-   V3 is not in the core's board list, but it does not need to be — for V3 the
-   Watchy library's own `config.h` defines the whole pin map directly.
+   Then set the revision, because the up button and the battery tap moved
+   between them. The IDE has no build-flag field, so uncomment the matching
+   line near the top of [`RefCounter/board.h`](RefCounter/board.h) — it has to
+   go in that header, which every source file includes, not in the `.ino`,
+   which would only set it for itself:
+
+   ```c
+   // #define ARDUINO_WATCHY_V20   // or _V15, or _V10
+   ```
+
+   V3 needs nothing: selecting an S3 board defines `ARDUINO_ESP32S3_DEV` for
+   you. Under PlatformIO this is handled by `build_flags` and no edit is needed.
+
+   Also set *Tools → Partition Scheme* to **Huge APP**, or the WiFi stack will
+   not fit.
 
 4. **Open and upload.** Open `RefCounter/RefCounter.ino`, select the serial
    port under *Tools → Port*, and hit Upload.
@@ -266,8 +345,12 @@ working, it is a cable or port problem rather than a timing one.
 - Buttons are not sampled during a buzz or a screen refresh. A hold that starts
   and ends inside one of those windows is missed; a hold you keep held is
   always caught, up to ~400ms late.
-- The watch does not keep time of day. This is a play clock, not a watch face —
-  the RTC and accelerometer are left untouched, which is part of why it lasts a
-  game.
 - Continuous running is the worst case for battery. Expect several hours of
   active use on a full charge; use low power mode between games.
+- Bringing up WiFi for an NTP sync blocks for several seconds, and buttons are
+  ignored for that whole time. It only happens after 60s untouched, and never
+  during a countdown, but it is a real pause if you catch it.
+- `GMT_OFFSET_SECONDS` is a fixed offset. Daylight saving is not handled, so it
+  needs editing and reflashing twice a year — or just use **Set Time**.
+- Adding WiFi grew the binary from 402KB to 1.13MB and RAM use from 29KB to
+  55KB. Both are comfortably within a 4MB / 320KB device.

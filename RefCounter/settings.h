@@ -8,6 +8,8 @@
 
 #include <stdint.h>
 
+static const char REF_COUNTER_VERSION[] = "1.0";
+
 // --- Countdown lengths -----------------------------------------------------
 // Top-right button runs the long clock, bottom-right runs the short clock.
 // Valid range is 1..99 (the display shows two digits).
@@ -65,6 +67,47 @@ static const uint32_t EXPIRED_HOLD_MS = 3000;
 // refresh follows once this long has passed with nothing happening. Starting a
 // clock cancels it, so the tidy-up never interrupts play.
 static const uint32_t SCREEN_TIDY_DELAY_MS = 3000;
+
+// --- Clock, menu and NTP ---------------------------------------------------
+// The time shows at the top left of every screen. It comes from the watch's
+// real time clock chip, which keeps running through low power mode and through
+// a reflash.
+static const bool CLOCK_24_HOUR = false;
+
+// Seconds offset from UTC, daylight saving included. Some common US values:
+//   -5*3600 Eastern standard    -4*3600 Eastern daylight
+//   -6*3600 Central standard    -5*3600 Central daylight
+//   -7*3600 Mountain standard   -6*3600 Mountain daylight
+//   -8*3600 Pacific standard    -7*3600 Pacific daylight
+static const long GMT_OFFSET_SECONDS = -5L * 3600L;
+
+static const char NTP_SERVER[] = "pool.ntp.org";
+
+// How long to wait for the time server to answer.
+static const uint32_t NTP_TIMEOUT_MS = 10000;
+
+// The access point the "Setup WiFi" screen raises, and how long it stays up.
+static const char     WIFI_AP_NAME[]     = "Watchy Ref Counter";
+static const uint16_t WIFI_AP_TIMEOUT_S  = 120;
+
+// The RTC drifts a little every day - roughly a minute a month on the PCF8563
+// fitted to V1.5 and V2, far less on the temperature-compensated DS3231 in
+// V1.0. Re-syncing over WiFi this often keeps it well under a second. Set to 0
+// to only ever sync by hand from the menu.
+static const uint32_t NTP_RESYNC_HOURS = 24;
+
+// An automatic sync blocks for several seconds while the radio comes up, so it
+// only runs after the watch has sat untouched this long. It never runs while a
+// clock is counting.
+static const uint32_t AUTO_SYNC_IDLE_MS = 60000;
+
+// Leave the menu and return to the ready screen after this long with no button
+// presses, so a menu opened by accident cannot strand you mid-game.
+static const uint32_t MENU_TIMEOUT_MS = 15000;
+
+// The menu's "Show Accelerometer" entry needs the BMA423 powered up. Nothing
+// else here uses it, so set false to save that current if you never look.
+static const bool ENABLE_ACCELEROMETER = false;
 
 // --- Power -----------------------------------------------------------------
 // CPU clock while awake. 80 MHz roughly halves current draw versus the 240 MHz

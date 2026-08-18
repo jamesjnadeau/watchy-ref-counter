@@ -3,16 +3,16 @@
 //
 //   top right    hold -> start / reset the long clock  (40s by default)
 //   bottom right hold -> start / reset the short clock (25s by default)
-//   bottom left  hold -> clear the clock and go back to the ready screen
+//   bottom left  hold -> on the ready screen, open the settings menu;
+//                          otherwise clear the clock and go back to it
 //   top left     hold -> low power mode, hold again to wake
 //
 // A short tap never does anything. Every tunable number lives in settings.h.
 //
-// This sketch deliberately does not use the Watchy base class. Watchy is built
-// around "wake, draw one frame, deep sleep", and Watchy::init() ends in
-// deepSleep() and never returns. A clock that ticks every second needs to stay
-// awake and own its own loop, so we borrow the library's display driver, pin
-// map and font, and drive them directly.
+// This project is self-contained: it does not link against the Watchy library.
+// The panel is driven through GxEPD2, the RTC chips over Wire, and NTP through
+// the ESP32 core's SNTP client. Where the behaviour follows the reference
+// firmware (sqfmi/Watchy) the comments say so, but none of its code is used.
 // ---------------------------------------------------------------------------
 
 #include <driver/rtc_io.h>
@@ -22,8 +22,12 @@
 #include "Buttons.h"
 #include "Buzzer.h"
 #include "RefDisplay.h"
+#include "RefMenu.h"
+#include "RefClock.h"
 #include "board.h"
 #include "settings.h"
+
+static RefClock refClock;
 
 static AppState state       = STATE_IDLE;
 static uint16_t durationSec = TIMER_LONG_SECONDS;
@@ -43,17 +47,50 @@ static uint32_t returnToIdleAt = 0;
 static bool     tidyPending = false;
 static uint32_t tidyAt      = 0;
 
+// Cached wall clock. The RTC is read over I2C at most once a second rather
+// than every loop, and the header is only repainted when the minute changes.
+static uint8_t  clockHour   = 0;
+static uint8_t  clockMinute = 0;
+static bool     clockValid  = false;
+static uint32_t clockReadAt = 0;
+
+// When the watch last did anything, used to hold off the automatic NTP sync
+// until it has been sitting untouched.
+static uint32_t lastActivityAt = 0;
+
 static View currentView() {
   View v;
   v.state       = state;
   v.secondsLeft = shownSec;
   v.durationSec = durationSec;
+  v.hour        = clockHour;
+  v.minute      = clockMinute;
+  v.clockValid  = clockValid;
   return v;
 }
 
+// Re-read the RTC at most once a second. Returns true when the displayed
+// minute changed, which is the only time the header needs repainting.
+static bool refreshClock() {
+  const uint32_t now = millis();
+  if (clockValid && (now - clockReadAt) < 1000) {
+    return false;
+  }
+  clockReadAt = now;
+
+  uint8_t h = clockHour, m = clockMinute;
+  const bool ok = refClock.read(h, m);
+  const bool changed = (ok != clockValid) || (ok && (h != clockHour || m != clockMinute));
+  clockValid  = ok;
+  clockHour   = h;
+  clockMinute = m;
+  return changed;
+}
+
 static void enterIdle(bool full) {
-  state       = STATE_IDLE;
-  tidyPending = false;
+  state          = STATE_IDLE;
+  tidyPending    = false;
+  lastActivityAt = millis();
   RefDisplay::render(currentView(), full);
 }
 
@@ -63,8 +100,9 @@ static void startTimer(uint16_t seconds) {
   startUs     = esp_timer_get_time();
   durationSec = seconds;
   shownSec    = seconds;
-  state       = STATE_RUNNING;
-  tidyPending = false;
+  state          = STATE_RUNNING;
+  tidyPending    = false;
+  lastActivityAt = millis();
 
   Buzzer::pulse(BUZZ_CONFIRM_MS);
   RefDisplay::render(currentView(), false);
@@ -74,13 +112,24 @@ static void startTimer(uint16_t seconds) {
 // partial refresh so it responds straight away; the ghosting that leaves is
 // cleaned up by the deferred full refresh queued here.
 static void clearToIdle() {
-  if (state == STATE_IDLE) {
-    return; // already there, so do not spend a refresh saying so
-  }
   Buzzer::pulse(BUZZ_CONFIRM_MS);
   enterIdle(false);
   tidyPending = true;
   tidyAt      = millis() + SCREEN_TIDY_DELAY_MS;
+}
+
+// The bottom-left button does one of two things. On the ready screen there is
+// no clock to clear, so it opens the reference settings menu instead; anywhere
+// else it clears back to the ready screen.
+static void bottomLeftHold() {
+  if (state != STATE_IDLE) {
+    clearToIdle();
+    return;
+  }
+  Buzzer::pulse(BUZZ_CONFIRM_MS);
+  RefMenu::open(refClock);
+  refreshClock(); // the menu may have set the time or synced it
+  enterIdle(true);
 }
 
 // Buzz for whatever mark the clock just landed on. Ordering matters: the
@@ -127,14 +176,13 @@ static void deepSleepUntilButton() {
   rtc_gpio_set_direction((gpio_num_t)BTN_SLEEP_PIN, RTC_GPIO_MODE_INPUT_ONLY);
   rtc_gpio_pullup_en((gpio_num_t)BTN_SLEEP_PIN);
 #else
-  // Park the unused GPIOs as inputs so they stop leaking current while asleep.
-  // Mask and technique lifted from Watchy::deepSleep() in the Watchy library.
-  const uint64_t ignore = 0b11110001000000110000100111000010;
-  for (int i = 0; i < GPIO_NUM_MAX; i++) {
-    if ((ignore >> i) & 0b1) {
-      continue;
-    }
-    pinMode(i, INPUT);
+  // Stop driving the lines this sketch pulls, so none of them leaks current
+  // over the hours the watch may spend asleep. The panel is already
+  // hibernated, so releasing its control lines is safe.
+  const uint8_t driven[] = {PIN_VIB_MOTOR,   PIN_DISPLAY_CS, PIN_DISPLAY_DC,
+                            PIN_DISPLAY_RST, PIN_SPI_SCK,    PIN_SPI_MOSI};
+  for (uint8_t pin : driven) {
+    pinMode(pin, INPUT);
   }
 #endif
   // Idle light sleep and the display driver's busy-wait both leave GPIO wake
@@ -208,9 +256,27 @@ static void idleTick() {
     return;
   }
   if (busy) {
+    lastActivityAt = millis();
     delay(BUTTON_POLL_MS);
     return;
   }
+
+  if (refreshClock()) {
+    RefDisplay::renderHeader(currentView());
+  }
+
+  // Correct RTC drift, but only once the watch has been left alone: bringing
+  // the radio up blocks for several seconds.
+  if ((millis() - lastActivityAt) >= AUTO_SYNC_IDLE_MS && refClock.syncDue()) {
+    refClock.connectAndSync();
+    lastActivityAt = millis();
+    clockValid     = false; // force a re-read at the new time
+    if (refreshClock()) {
+      RefDisplay::renderHeader(currentView());
+    }
+    return;
+  }
+
   idleSleep();
 }
 
@@ -221,6 +287,8 @@ void setup() {
   Buzzer::begin();
   Buttons::begin();
   RefDisplay::begin();
+  refClock.begin(esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_UNDEFINED);
+  refreshClock();
 
   // Full refresh on the way in, whether this is a cold boot or a wake from
   // low power mode, so the panel starts clean.
@@ -243,7 +311,7 @@ void loop() {
     return;
   }
   if (Buttons::heldFor(Buttons::RESET, TIMER_HOLD_MS)) {
-    clearToIdle();
+    bottomLeftHold();
     return;
   }
 
