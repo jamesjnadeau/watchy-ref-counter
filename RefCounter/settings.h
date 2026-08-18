@@ -16,6 +16,25 @@ static const char REF_COUNTER_VERSION[] = "1.0";
 static const uint16_t TIMER_LONG_SECONDS  = 40;
 static const uint16_t TIMER_SHORT_SECONDS = 25;
 
+// --- Sport preset ----------------------------------------------------------
+// Which preset the watch starts on. This is only the starting point: the
+// menu's "Sport" entry picks one on the watch and stores it, and from then on
+// the stored value wins. Must match one of the names in RefSport.cpp, which
+// are:
+//
+//   Football   Lacrosse   Base NCAA  Base NFHS  Soft NCAA  Soft NFHS  Custom
+//
+static const char DEFAULT_SPORT[] = "Football";
+
+// Factory values for the menu's "Custom" slot, likewise overridden once "Edit
+// Custom" has been used. Clocks are 1..199 seconds; the three marks are
+// 0..199, where 0 means off. All three marks are in seconds *remaining*.
+static const uint16_t CUSTOM_LONG_SECONDS  = 40;
+static const uint16_t CUSTOM_SHORT_SECONDS = 25;
+static const uint16_t CUSTOM_WARN_SECONDS  = 10;
+static const uint16_t CUSTOM_WARN2_SECONDS = 0;
+static const uint16_t CUSTOM_FINAL_FROM    = 5;
+
 // --- Button hold thresholds ------------------------------------------------
 // How long a right-hand button must be held before it starts (or restarts)
 // its clock. A short tap is deliberately ignored so a bumped button during a
