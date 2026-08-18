@@ -27,6 +27,7 @@
 #include "Buzzer.h"
 #include "RefDisplay.h"
 #include "RefPanel.h"
+#include "RefSport.h"
 #include "RefZone.h"
 #include "board.h"
 #include "settings.h"
@@ -36,9 +37,11 @@ namespace {
 
 auto &display = RefPanel::display;
 
-// Two of these read their current value rather than being fixed text, so the
-// menu doubles as the status display for the zone and the DST switch.
+// Three of these read their current value rather than being fixed text, so the
+// menu doubles as the status display for the sport, the zone and the DST
+// switch. The widest this gets is "Sport: Base NCAA", 16 glyphs.
 enum Item : uint8_t {
+  ITEM_SPORT,
   ITEM_ABOUT,
   ITEM_BUZZ,
   ITEM_SET_TIME,
@@ -59,10 +62,12 @@ const uint8_t MENU_VISIBLE = 7;
 // scrolled from last time.
 uint8_t menuTop = 0;
 
-// Longest is "DST: Auto"; the zone names are capped at eight characters so
-// "TZ: Mountain" is the widest this can get.
+// Three of these read their current value rather than being fixed text, so the
+// menu doubles as the status display for the sport, the zone and the DST
+// switch. The widest this gets is "Sport: Base NCAA", 16 glyphs.
 void itemLabel(uint8_t i, char *buf, size_t n) {
   switch (i) {
+  case ITEM_SPORT:    snprintf(buf, n, "Sport: %s", RefSport::active().name); break;
   case ITEM_ABOUT:    snprintf(buf, n, "About"); break;
   case ITEM_BUZZ:     snprintf(buf, n, "Vibrate Motor"); break;
   case ITEM_SET_TIME: snprintf(buf, n, "Set Time"); break;
@@ -226,6 +231,107 @@ void showAbout(RefClock &refClock) {
   display.println(offset);
 
   display.display(false); // full refresh
+}
+
+// The sport picker. Same shape as the zone picker below: a scrolling window of
+// rows, MENU to take the highlighted one, BACK to leave the stored one alone,
+// and a timeout so a menu opened by accident cannot strand anyone mid-game.
+void pickSport() {
+  const int16_t ROW_H   = 22;
+  const uint8_t VISIBLE = 7;
+  const int16_t FIRST_Y = 22;
+  const int16_t RULE_Y  = 164;
+  const uint8_t total   = RefSport::count();
+
+  uint8_t index = RefSport::index();
+  uint8_t top   = index < VISIBLE ? 0 : (uint8_t)(index - VISIBLE + 1);
+
+  claimButtons();
+  display.setFullWindow();
+
+  bool first = true;
+  uint32_t lastActivity = millis();
+  while (millis() - lastActivity < MENU_TIMEOUT_MS) {
+    if (index < top) {
+      top = index;
+    } else if (index >= top + VISIBLE) {
+      top = (uint8_t)(index - VISIBLE + 1);
+    }
+
+    display.fillScreen(THEME_BG);
+    display.setFont(&FreeMonoBold9pt7b);
+
+    // "Base NCAA 120/20" is the widest row, 16 glyphs of the 18 that fit.
+    char row[24];
+    for (uint8_t slot = 0; slot < VISIBLE && top + slot < total; slot++) {
+      const uint8_t s       = (uint8_t)(top + slot);
+      const int16_t yPos    = FIRST_Y + ROW_H * slot;
+      const RefSport::Preset p = RefSport::preset(s);
+      snprintf(row, sizeof(row), "%-9s %u/%u", p.name, (unsigned)p.longSeconds,
+               (unsigned)p.shortSeconds);
+
+      if (s == index) {
+        display.fillRect(0, yPos - 17, DISPLAY_WIDTH, ROW_H - 1, THEME_FG);
+        display.setTextColor(THEME_BG);
+      } else {
+        display.setTextColor(THEME_FG);
+      }
+      display.setCursor(2, yPos);
+      display.print(row);
+    }
+
+    display.setTextColor(THEME_FG);
+    display.drawFastHLine(0, RULE_Y, DISPLAY_WIDTH, THEME_FG);
+
+    const RefSport::Preset sel = RefSport::preset(index);
+
+    display.setCursor(2, 180);
+    display.print(sel.description);
+
+    char counter[10];
+    snprintf(counter, sizeof(counter), "%u/%u", (unsigned)(index + 1),
+             (unsigned)total);
+    // FreeMonoBold9pt7b advances 11 pixels a glyph, so right-aligning is
+    // arithmetic rather than a getTextBounds round trip.
+    display.setCursor(DISPLAY_WIDTH - 2 - (int16_t)(strlen(counter) * 11), 180);
+    display.print(counter);
+
+    // The buzz marks, which are the half of a preset the rows have no room
+    // for. "warn 30/10 last 5" is 17 glyphs.
+    char marks[24];
+    snprintf(marks, sizeof(marks), "warn %u/%u last %u",
+             (unsigned)sel.warnAtSeconds, (unsigned)sel.warn2AtSeconds,
+             (unsigned)sel.finalCountdownFrom);
+    display.setCursor(2, 196);
+    display.print(marks);
+
+    display.display(!first); // full refresh on the way in, partial to scroll
+    first = false;
+
+    while (millis() - lastActivity < MENU_TIMEOUT_MS) {
+      if (pressed(PIN_BTN_MENU)) {
+        RefSport::setIndex(index);
+        Buzzer::pulse(BUZZ_CONFIRM_MS);
+        Buttons::waitForRelease();
+        return;
+      }
+      if (pressed(PIN_BTN_BACK)) {
+        Buttons::waitForRelease();
+        return; // leave the stored sport alone
+      }
+      if (pressed(PIN_BTN_UP)) {
+        index = (index == 0) ? (uint8_t)(total - 1) : (uint8_t)(index - 1);
+        lastActivity = millis();
+        break;
+      }
+      if (pressed(PIN_BTN_DOWN)) {
+        index = (uint8_t)((index + 1) % total);
+        lastActivity = millis();
+        break;
+      }
+      delay(BUTTON_POLL_MS);
+    }
+  }
 }
 
 // The zone picker. Eleven zones do not fit on a 200 pixel panel, so this
@@ -548,6 +654,7 @@ void open(RefClock &refClock) {
       // redraw rather than the 2.6s full one every other entry earns.
       bool quickRedraw = false;
       switch (index) {
+      case ITEM_SPORT:    pickSport(); break;
       case ITEM_ABOUT:    showAbout(refClock); holdResult = true; break;
       case ITEM_BUZZ:     showBuzz(); break;
       case ITEM_SET_TIME: setTime(refClock); break;
