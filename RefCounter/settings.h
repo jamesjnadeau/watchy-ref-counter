@@ -8,13 +8,7 @@
 
 #include <stdint.h>
 
-static const char REF_COUNTER_VERSION[] = "1.0";
-
-// --- Countdown lengths -----------------------------------------------------
-// Top-right button runs the long clock, bottom-right runs the short clock.
-// Valid range is 1..99 (the display shows two digits).
-static const uint16_t TIMER_LONG_SECONDS  = 40;
-static const uint16_t TIMER_SHORT_SECONDS = 25;
+static const char REF_COUNTER_VERSION[] = "1.1";
 
 // --- Sport preset ----------------------------------------------------------
 // Which preset the watch starts on. This is only the starting point: the
@@ -49,16 +43,16 @@ static const uint32_t SLEEP_HOLD_MS = 1000;
 // Single long buzz when the clock reaches zero.
 static const uint32_t BUZZ_EXPIRE_MS = 1000;
 
-// Early warning: when this many seconds remain, buzz WARNING_BUZZ_COUNT times.
-// Set WARNING_BUZZ_COUNT to 0 to disable the warning entirely.
-// Note: if WARNING_AT_SECONDS is set at or below FINAL_COUNTDOWN_FROM, the
-// per-second countdown buzz wins and the warning never fires.
-static const uint16_t WARNING_AT_SECONDS = 10;
-static const uint8_t  WARNING_BUZZ_COUNT = 1;
-
-// Tick buzz on each of the last N second marks (5, 4, 3, 2, 1).
-// Set to 0 to disable the per-second countdown.
-static const uint16_t FINAL_COUNTDOWN_FROM = 5;
+// Early warning: when a preset's first mark is reached, buzz this many times;
+// its second mark buzzes WARNING_BUZZ_COUNT_2 times. Either may be 0 to
+// silence that mark for every preset at once. Which second each mark falls on
+// is per-sport and lives in RefSport.cpp; the menu's "Edit Custom" screen sets
+// them for the Custom preset.
+//
+// Note: a mark at or below a preset's final-countdown value is swallowed by
+// the per-second countdown, which buzzes there anyway.
+static const uint8_t WARNING_BUZZ_COUNT   = 1;
+static const uint8_t WARNING_BUZZ_COUNT_2 = 2;
 
 // Length of a short buzz, and the silent gap between repeats.
 static const uint32_t BUZZ_SHORT_MS = 150;

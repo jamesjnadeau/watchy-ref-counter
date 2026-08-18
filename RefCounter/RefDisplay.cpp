@@ -1,8 +1,11 @@
 #include "RefDisplay.h"
 
+#include <ctype.h>
+
 #include "Buttons.h"
 #include "RefPanel.h"
 #include "RefSegments.h"
+#include "RefSport.h"
 #include "board.h"
 #include "settings.h"
 
@@ -198,9 +201,10 @@ void drawRowMarker(int16_t rowY, const SegStyle &s) {
 void drawBody(const View &v) {
   if (v.state == STATE_IDLE) {
     // Stack both clocks so they line up with the two right-hand buttons.
-    drawCount(TIMER_LONG_SECONDS, ROW1_Y, STYLE_SMALL, FG);
+    const RefSport::Preset p = RefSport::active();
+    drawCount(p.longSeconds, ROW1_Y, STYLE_SMALL, FG);
     drawRowMarker(ROW1_Y, STYLE_SMALL);
-    drawCount(TIMER_SHORT_SECONDS, ROW2_Y, STYLE_SMALL, FG);
+    drawCount(p.shortSeconds, ROW2_Y, STYLE_SMALL, FG);
     drawRowMarker(ROW2_Y, STYLE_SMALL);
     return;
   }
@@ -208,7 +212,10 @@ void drawBody(const View &v) {
 }
 
 void drawFooter(const View &v) {
+  // Room for the longest preset name plus its terminator.
+  static char sportUpper[12];
   const char *hint;
+
   switch (v.state) {
   case STATE_RUNNING:
     hint = "BTM LEFT = CLEAR";
@@ -216,9 +223,18 @@ void drawFooter(const View &v) {
   case STATE_EXPIRED:
     hint = "TIME EXPIRED";
     break;
-  default:
-    hint = "HOLD TO START";
+  default: {
+    // On the ready screen the footer says which preset is loaded. That is the
+    // thing worth checking before a game; "hold to start" is in the manual.
+    const char *name = RefSport::active().name;
+    size_t i = 0;
+    for (; name[i] != '\0' && i < sizeof(sportUpper) - 1; i++) {
+      sportUpper[i] = (char)toupper((unsigned char)name[i]);
+    }
+    sportUpper[i] = '\0';
+    hint = sportUpper;
     break;
+  }
   }
 
   display.drawFastHLine(0, FOOTER_RULE_Y, SCREEN_W, FG);

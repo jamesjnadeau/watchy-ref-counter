@@ -24,13 +24,14 @@
 #include "RefDisplay.h"
 #include "RefMenu.h"
 #include "RefClock.h"
+#include "RefSport.h"
 #include "board.h"
 #include "settings.h"
 
 static RefClock refClock;
 
 static AppState state       = STATE_IDLE;
-static uint16_t durationSec = TIMER_LONG_SECONDS;
+static uint16_t durationSec = 0;
 static uint16_t shownSec    = 0;
 
 // Wall clock origin for the running countdown. Remaining time is always
@@ -132,16 +133,22 @@ static void bottomLeftHold() {
   enterIdle(true);
 }
 
-// Buzz for whatever mark the clock just landed on. Ordering matters: the
-// per-second countdown takes precedence over the early warning, so setting
-// WARNING_AT_SECONDS inside FINAL_COUNTDOWN_FROM silently disables it.
+// Buzz for whatever mark the clock just landed on, using the active preset's
+// numbers. Ordering matters: the per-second countdown takes precedence over
+// both warnings, so a mark set inside finalCountdownFrom is silently swallowed.
 static void buzzForMark(uint16_t secondsLeft) {
+  const RefSport::Preset p = RefSport::active();
+
   if (secondsLeft == 0) {
     Buzzer::pulse(BUZZ_EXPIRE_MS);
-  } else if (FINAL_COUNTDOWN_FROM > 0 && secondsLeft <= FINAL_COUNTDOWN_FROM) {
+  } else if (p.finalCountdownFrom > 0 && secondsLeft <= p.finalCountdownFrom) {
     Buzzer::pulse(BUZZ_SHORT_MS);
-  } else if (WARNING_BUZZ_COUNT > 0 && secondsLeft == WARNING_AT_SECONDS) {
+  } else if (WARNING_BUZZ_COUNT > 0 && p.warnAtSeconds > 0 &&
+             secondsLeft == p.warnAtSeconds) {
     Buzzer::pulse(WARNING_BUZZ_COUNT, BUZZ_SHORT_MS, BUZZ_GAP_MS);
+  } else if (WARNING_BUZZ_COUNT_2 > 0 && p.warn2AtSeconds > 0 &&
+             secondsLeft == p.warn2AtSeconds) {
+    Buzzer::pulse(WARNING_BUZZ_COUNT_2, BUZZ_SHORT_MS, BUZZ_GAP_MS);
   }
 }
 
@@ -279,6 +286,7 @@ void setup() {
   }
   Buzzer::begin();
   Buttons::begin();
+  RefSport::begin();
   RefDisplay::begin();
   refClock.begin(esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_UNDEFINED);
   refreshClock();
@@ -296,11 +304,11 @@ void loop() {
     return;
   }
   if (Buttons::heldFor(Buttons::LONG_TIMER, TIMER_HOLD_MS)) {
-    startTimer(TIMER_LONG_SECONDS);
+    startTimer(RefSport::active().longSeconds);
     return;
   }
   if (Buttons::heldFor(Buttons::SHORT_TIMER, TIMER_HOLD_MS)) {
-    startTimer(TIMER_SHORT_SECONDS);
+    startTimer(RefSport::active().shortSeconds);
     return;
   }
   if (Buttons::heldFor(Buttons::RESET, TIMER_HOLD_MS)) {
