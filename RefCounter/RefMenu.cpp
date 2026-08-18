@@ -252,6 +252,7 @@ void pickSport() {
   bool first = true;
   uint32_t lastActivity = millis();
   while (millis() - lastActivity < MENU_TIMEOUT_MS) {
+    // Keep the highlighted row inside the visible window.
     if (index < top) {
       top = index;
     } else if (index >= top + VISIBLE) {
@@ -296,18 +297,22 @@ void pickSport() {
     display.setCursor(DISPLAY_WIDTH - 2 - (int16_t)(strlen(counter) * 11), 180);
     display.print(counter);
 
-    // The buzz marks, which are the half of a preset the rows have no room
-    // for. "warn 30/10 last 5" is 17 glyphs.
+    // The warning marks, which are the half of a preset the rows have no room
+    // for. The final-countdown value is deliberately not here: it is 5 for
+    // every fixed preset, so it never tells two of them apart, and the one
+    // preset that can change it shows it spelled out on its own editor screen.
+    // Three values would need a one-letter label to fit the panel at 199.
     char marks[24];
-    snprintf(marks, sizeof(marks), "warn %u/%u last %u",
-             (unsigned)sel.warnAtSeconds, (unsigned)sel.warn2AtSeconds,
-             (unsigned)sel.finalCountdownFrom);
+    snprintf(marks, sizeof(marks), "warn %u/%u",
+             (unsigned)sel.warnAtSeconds, (unsigned)sel.warn2AtSeconds);
     display.setCursor(2, 196);
     display.print(marks);
 
     display.display(!first); // full refresh on the way in, partial to scroll
     first = false;
 
+    // Poll until something happens, so a settled screen is not redrawn on a
+    // loop for no reason.
     while (millis() - lastActivity < MENU_TIMEOUT_MS) {
       if (pressed(PIN_BTN_MENU)) {
         RefSport::setIndex(index);
