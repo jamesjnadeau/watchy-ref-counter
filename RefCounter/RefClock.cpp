@@ -3,7 +3,9 @@
 #include <WiFi.h>
 #include <Wire.h>
 #include <esp_chip_info.h>
+#include <esp_sntp.h>
 
+#include "RefZone.h"
 #include "board.h"
 #include "settings.h"
 
@@ -18,22 +20,57 @@ RTC_DATA_ATTR time_t bootedAt        = 0;
 } // namespace
 
 void RefClock::begin(bool coldBoot) {
-  Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL);
-  _rtc.begin();
-
-  // The SNTP client applies this, and so does localtime_r once the RTC has
-  // pushed a value through settimeofday().
+  // The RTC chip, and everything built on top of it, works in UTC. Keeping the
+  // C library in UTC too means mktime and localtime_r round-trip a struct tm
+  // unchanged, so RefRtc never has to think about zones. The local time the
+  // watch displays is produced in one place, by localNow() below.
   setenv("TZ", "UTC0", 1);
   tzset();
+
+  Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL);
+  _rtc.begin();
+  RefZone::begin();
 
   if (coldBoot) {
     bootedAt = _rtc.epoch();
   }
 }
 
+bool RefClock::localNow(struct tm &out) {
+  const time_t utc = _rtc.epoch();
+  if (utc == 0) {
+    return false;
+  }
+  const time_t local = utc + RefZone::offsetSecondsAt(utc);
+  // gmtime_r rather than localtime_r: the offset has already been folded in,
+  // and applying it twice is exactly the bug this arrangement avoids.
+  gmtime_r(&local, &out);
+  return true;
+}
+
+bool RefClock::setLocal(const struct tm &local) {
+  struct tm copy = local;
+  copy.tm_isdst  = 0;
+  const time_t asTyped = mktime(&copy); // TZ is UTC0, so this is a plain count
+  if (asTyped == (time_t)-1) {
+    return false;
+  }
+  const time_t utc = asTyped - RefZone::offsetSecondsForLocal(asTyped);
+
+  struct tm utcTm;
+  gmtime_r(&utc, &utcTm);
+  return _rtc.set(utcTm);
+}
+
+long RefClock::utcOffsetSeconds() {
+  return RefZone::offsetSecondsAt(_rtc.epoch());
+}
+
+const char *RefClock::zoneAbbrev() { return RefZone::abbrevAt(_rtc.epoch()); }
+
 bool RefClock::read(uint8_t &hour, uint8_t &minute) {
   struct tm t;
-  if (!_rtc.read(t)) {
+  if (!localNow(t)) {
     return false;
   }
   hour   = (uint8_t)t.tm_hour;
@@ -42,15 +79,29 @@ bool RefClock::read(uint8_t &hour, uint8_t &minute) {
 }
 
 bool RefClock::syncFromNtp() {
-  // The core's SNTP client. The offset is applied here rather than by a
-  // timezone rule, so the RTC ends up holding local time.
-  configTime(GMT_OFFSET_SECONDS, 0, NTP_SERVER);
+  // Zero offset: what goes into the RTC is UTC. The zone is applied on the way
+  // out, in localNow(), so a zone or daylight saving change needs no re-sync.
+  configTime(0, 0, NTP_SERVER);
+  // configTime writes TZ itself, from that offset. It lands on "UTC0", which
+  // is what this project wants anyway, but re-assert it rather than depend on
+  // how a given core version spells it.
+  setenv("TZ", "UTC0", 1);
+  tzset();
 
   struct tm fetched;
   const bool ok = getLocalTime(&fetched, NTP_TIMEOUT_MS);
   if (ok) {
     _rtc.set(fetched);
   }
+
+  // configTime leaves the SNTP service running, and it keeps its own poll
+  // timer going long after the radio is off. Nothing here wants a background
+  // task re-setting the clock behind the RTC's back, so stop it.
+#if defined(ESP_IDF_VERSION_MAJOR) && ESP_IDF_VERSION_MAJOR >= 5
+  esp_sntp_stop();
+#else
+  sntp_stop(); // pre-IDF5 spelling, for older Arduino cores
+#endif
 
   lastSyncAttempt = _rtc.epoch();
   if (ok) {

@@ -213,23 +213,16 @@ static void idleSleep() {
     return;
   }
 
-  gpio_wakeup_enable((gpio_num_t)BTN_LONG_TIMER_PIN, BTN_LIGHT_SLEEP_WAKE_LEVEL);
-  gpio_wakeup_enable((gpio_num_t)BTN_SHORT_TIMER_PIN, BTN_LIGHT_SLEEP_WAKE_LEVEL);
-  gpio_wakeup_enable((gpio_num_t)BTN_SLEEP_PIN, BTN_LIGHT_SLEEP_WAKE_LEVEL);
-  gpio_wakeup_enable((gpio_num_t)BTN_RESET_PIN, BTN_LIGHT_SLEEP_WAKE_LEVEL);
-  esp_sleep_enable_gpio_wakeup();
+  // Buttons owns the pins' interrupt configuration, so it owns the arming too.
+  Buttons::armLightSleepWake();
   // Timer wake as a backstop: if a GPIO wake is ever missed, the cost is one
   // poll interval rather than a watch that ignores its buttons.
   esp_sleep_enable_timer_wakeup((uint64_t)IDLE_SLEEP_MS * 1000ULL);
 
   esp_light_sleep_start();
 
-  gpio_wakeup_disable((gpio_num_t)BTN_LONG_TIMER_PIN);
-  gpio_wakeup_disable((gpio_num_t)BTN_SHORT_TIMER_PIN);
-  gpio_wakeup_disable((gpio_num_t)BTN_SLEEP_PIN);
-  gpio_wakeup_disable((gpio_num_t)BTN_RESET_PIN);
+  Buttons::disarmLightSleepWake();
   esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_TIMER);
-  esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_GPIO);
 }
 
 static void idleTick() {

@@ -74,12 +74,22 @@ static const uint32_t SCREEN_TIDY_DELAY_MS = 3000;
 // a reflash.
 static const bool CLOCK_24_HOUR = false;
 
-// Seconds offset from UTC, daylight saving included. Some common US values:
-//   -5*3600 Eastern standard    -4*3600 Eastern daylight
-//   -6*3600 Central standard    -5*3600 Central daylight
-//   -7*3600 Mountain standard   -6*3600 Mountain daylight
-//   -8*3600 Pacific standard    -7*3600 Pacific daylight
-static const long GMT_OFFSET_SECONDS = -5L * 3600L;
+// Time zone. This is only the starting point: the menu's "TZ" entry picks a
+// zone on the watch and stores it, and from then on the stored value wins.
+// Must match one of the names in RefZone.cpp, which are:
+//
+//   Eastern   Central   Mountain  Arizona   Pacific   Alaska
+//   Aleutian  Hawaii    Samoa     Atlantic  Chamorro
+//
+// Arizona, Hawaii, Samoa, Atlantic (Puerto Rico and the USVI) and Chamorro
+// (Guam and the Northern Marianas) do not observe daylight saving.
+static const char DEFAULT_TIME_ZONE[] = "Eastern";
+
+// Starting position of the menu's "DST" switch, likewise overridden once the
+// switch has been touched on the watch. On means the US rule is applied when
+// the date calls for it -- forward on the second Sunday in March, back on the
+// first Sunday in November -- not that the clock is shifted year round.
+static const bool DEFAULT_DST_AUTO = true;
 
 static const char NTP_SERVER[] = "pool.ntp.org";
 
@@ -94,7 +104,8 @@ static const uint16_t WIFI_AP_TIMEOUT_S  = 120;
 // fitted to V1.5 and V2, far less on the temperature-compensated DS3231 in
 // V1.0. Re-syncing over WiFi this often keeps it well under a second. Set to 0
 // to only ever sync by hand from the menu.
-static const uint32_t NTP_RESYNC_HOURS = 24;
+static const uint32_t NTP_RESYNC_HOURS = 0; 
+// set to 0 so you can manually sync, I would rather have this than trying to sync during a game
 
 // An automatic sync blocks for several seconds while the radio comes up, so it
 // only runs after the watch has sat untouched this long. It never runs while a

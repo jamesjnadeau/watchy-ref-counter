@@ -115,13 +115,63 @@ cannot strand you mid-game.
 | --- | --- |
 | About | Version, board revision, battery, time, uptime, last sync, RTC type |
 | Vibrate Motor | Buzz test |
-| Set Time | Set the RTC by hand, no WiFi needed |
+| Set Time | Set the clock by hand, no WiFi needed |
+| TZ: *name* | Pick a US time zone from a scrolling list |
+| DST: Auto/Off | Turn the daylight saving rule on or off |
 | Setup WiFi | Captive portal to save credentials |
-| Sync NTP | Connect and set the RTC from `NTP_SERVER` |
+| Sync NTP | Connect and set the clock from `NTP_SERVER` |
+
+The **TZ** and **DST** rows show their current value rather than fixed text, so
+the menu doubles as the status display for both. **DST** toggles in place and
+redraws with a fast partial refresh; everything else opens a screen.
 
 There is no "Show Accelerometer". The reference has one, but nothing on a play
 clock reads the sensor, and leaving it out means the BMA423 is never powered
 up at all.
+
+## Time zones and daylight saving
+
+The RTC holds UTC. The zone offset is applied on the way out, every time the
+clock is read, which is what makes the two menu entries cheap: changing zone or
+flipping the DST switch takes effect on the next redraw and never rewrites the
+clock chip.
+
+The **TZ** entry lists all eleven US zones by name, with their standard offset
+on the row and the abbreviations and region underneath:
+
+| Zone | Standard | Daylight | Where |
+| --- | --- | --- | --- |
+| Eastern | UTC−5 EST | EDT | NY, DC, Atlanta, Miami |
+| Central | UTC−6 CST | CDT | Chicago, Dallas, Minneapolis |
+| Mountain | UTC−7 MST | MDT | Denver, Salt Lake, Albuquerque |
+| Arizona | UTC−7 MST | — | most of Arizona |
+| Pacific | UTC−8 PST | PDT | LA, Seattle, SF, Las Vegas |
+| Alaska | UTC−9 AKST | AKDT | most of Alaska |
+| Aleutian | UTC−10 HST | HDT | western Aleutians |
+| Hawaii | UTC−10 HST | — | Hawaii |
+| Samoa | UTC−11 SST | — | American Samoa |
+| Atlantic | UTC−4 AST | — | Puerto Rico, USVI |
+| Chamorro | UTC+10 ChST | — | Guam, N. Marianas |
+
+**DST: Auto** means the US federal rule is applied when the date calls for it —
+forward at 02:00 local standard on the second Sunday in March, back at 02:00
+local daylight on the first Sunday in November — not that the clock is shifted
+year round. Nothing needs doing at a changeover: the offset is computed from
+the instant being displayed, so the watch is right on both sides of it and
+right again if it is rebooted or asleep across it. **DST: Off** pins the zone
+to standard time all year. The five zones with no daylight saving ignore the
+switch either way.
+
+Both settings are stored in NVS, so they survive a reflash — the zone is a
+property of where the watch is, not of the firmware on it. `DEFAULT_TIME_ZONE`
+and `DEFAULT_DST_AUTO` in `settings.h` are only the starting point, used until
+the menu has been used once.
+
+The rule is the one in force since 2007 (Energy Policy Act of 2005). It is
+verified against the real transition dates for 2024–2027 and 2030 in every
+zone; see *Testing* below. Set Time is exact except for the one hour a year
+that springing forward deletes — typing 02:30 on that morning stores 01:30,
+because 02:30 never happens.
 
 ## Timekeeping
 
@@ -131,8 +181,12 @@ ESP32-S3's own 32kHz-backed clock. It keeps running through low power mode and
 through a reflash, so the watch only needs setting once. The About screen
 reports which one was found.
 
-Drift is handled two ways. **Set Time** sets it by hand. **Sync NTP** sets it
-from the internet, and the same sync also runs automatically every
+The chip is kept in UTC, not local time. That is what lets the zone and DST
+settings change with no clock write and no drift, and it means an NTP sync
+needs no offset applied to it.
+
+Drift is handled two ways. **Set Time** sets it by hand, in local time.
+**Sync NTP** sets it from the internet, and the same sync also runs automatically every
 `NTP_RESYNC_HOURS` (24 by default) once WiFi credentials have been saved. A
 PCF8563 drifts roughly a minute a month; a daily sync keeps that under a
 second. The DS3231 in V1.0 is temperature compensated and drifts far less.
@@ -164,6 +218,7 @@ watchy-ref-counter/
     ├── RefDisplay.h/.cpp  screen layout and e-paper refresh strategy
     ├── RefRtc.h/.cpp      DS3231 / PCF8563 / ESP32-S3 clock, over I2C
     ├── RefClock.h/.cpp    timekeeping, NTP sync, battery, board revision
+    ├── RefZone.h/.cpp     US time zones and the daylight saving rule
     └── RefMenu.h/.cpp     the settings menu
 ```
 
@@ -258,12 +313,14 @@ static const uint8_t  WARNING_BUZZ_COUNT  = 1;    // buzzes at that mark
 static const uint16_t FINAL_COUNTDOWN_FROM = 5;   // buzz each of the last N
 static const bool     DARK_MODE           = false; // false = black on white
 static const bool     CLOCK_24_HOUR       = false;
-static const long     GMT_OFFSET_SECONDS  = -5L * 3600L; // your timezone
+static const char     DEFAULT_TIME_ZONE[] = "Eastern"; // until set in the menu
+static const bool     DEFAULT_DST_AUTO    = true; // apply the US rule by date
 static const uint32_t NTP_RESYNC_HOURS    = 24;   // 0 = only sync by hand
 ```
 
-`GMT_OFFSET_SECONDS` is the one you must set — it includes daylight saving, so
-it needs changing twice a year. There is no timezone database on the watch.
+`DEFAULT_TIME_ZONE` and `DEFAULT_DST_AUTO` are only defaults — the menu's
+**TZ** and **DST** entries override them and the choice is kept in NVS across
+reflashes.
 
 `DARK_MODE` flips the whole theme, panel border included. The stock Watchy
 `7_SEG` face ships with its own `DARKMODE true`, which is why it is white on
@@ -340,8 +397,35 @@ ESP32 revisions have no button on GPIO 0 and rely on the USB serial chip's
 auto-reset instead, so there is no button to hold; if auto-reset is not
 working, it is a cable or port problem rather than a timing one.
 
+## Testing
+
+`RefZone.cpp` is pure arithmetic and compiles on a host, so the daylight saving
+rule is checked off the watch — getting a changeover date wrong is exactly the
+sort of bug that only surfaces twice a year.
+
+```bash
+./tests/run.sh
+```
+
+`tests/tz_test.cpp` walks the exact transition instants for 2024, 2025, 2026,
+2027 and 2030, checks January and July in all eleven zones, checks that
+**DST: Off** pins every zone to standard time, and round-trips 1,460 local
+times through local → UTC → local. `tests/tz_edges.cpp` prints what Set Time
+does inside the two transition hours. Both build the shipped `RefZone.cpp`
+against a stub `Preferences` that reports nothing stored, so the `settings.h`
+defaults apply.
+
+Nothing else here has automated tests, and none of this has run on hardware —
+see below.
+
 ## Known limitations
 
+- **None of this has been run on a watch.** It builds clean for all four
+  revisions and the time zone logic is tested on a host, but no part of it has
+  been exercised on real hardware. The least proven pieces are `RefRtc`'s BCD
+  decoding and chip probing, `RefPanel::begin()` (GxEPD2's stock init rather
+  than the reference firmware's tuned one), light sleep, and whether the four
+  buttons are physically where `board.h` says they are.
 - Buttons are not sampled during a buzz or a screen refresh. A hold that starts
   and ends inside one of those windows is missed; a hold you keep held is
   always caught, up to ~400ms late.
@@ -350,7 +434,9 @@ working, it is a cable or port problem rather than a timing one.
 - Bringing up WiFi for an NTP sync blocks for several seconds, and buttons are
   ignored for that whole time. It only happens after 60s untouched, and never
   during a countdown, but it is a real pause if you catch it.
-- `GMT_OFFSET_SECONDS` is a fixed offset. Daylight saving is not handled, so it
-  needs editing and reflashing twice a year — or just use **Set Time**.
+- Only US time zones are listed. Elsewhere, pick whichever standard offset
+  matches and turn **DST** off, or add a row to the table in `RefZone.cpp`.
+- The daylight saving rule is the current US one, hard-coded. If Congress makes
+  daylight saving permanent, this needs a firmware change.
 - Adding WiFi grew the binary from 402KB to 1.13MB and RAM use from 29KB to
   55KB. Both are comfortably within a 4MB / 320KB device.

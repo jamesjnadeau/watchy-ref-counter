@@ -19,9 +19,23 @@ public:
 
   RefRtc &rtc() { return _rtc; }
 
-  // Current hour and minute. False if the clock has never been set, in which
-  // case the caller should show --:-- rather than a made up time.
+  // Current hour and minute, local. False if the clock has never been set, in
+  // which case the caller should show --:-- rather than a made up time.
   bool read(uint8_t &hour, uint8_t &minute);
+
+  // The full local date and time. The RTC itself holds UTC; the zone offset
+  // and any daylight saving are applied here, so nothing downstream has to
+  // know about either. False if the clock has never been set.
+  bool localNow(struct tm &out);
+
+  // Set the clock from a local date and time, as typed on the set-time
+  // screen. Converts to UTC before writing.
+  bool setLocal(const struct tm &local);
+
+  // Seconds currently being added to UTC, and the matching abbreviation
+  // ("EST", "EDT"), for the screens that report the zone.
+  long utcOffsetSeconds();
+  const char *zoneAbbrev();
 
   // Set the RTC from an internet time server. Assumes WiFi is already up; the
   // menu connects itself so it can report each step. Records the attempt

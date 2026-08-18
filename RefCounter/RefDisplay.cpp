@@ -1,5 +1,6 @@
 #include "RefDisplay.h"
 
+#include "Buttons.h"
 #include "RefPanel.h"
 #include "board.h"
 #include "settings.h"
@@ -227,10 +228,24 @@ void drawDigitPair(int16_t x, int16_t y, uint8_t value, bool lit) {
   drawPair(x, y, value, STYLE_MED, lit ? THEME_FG : THEME_BG);
 }
 
+// Handed to GxEPD2 and called over and over while the panel is busy. The delay
+// is what the driver would have done here on its own; it keeps the wait from
+// becoming a spin on a watch that is trying to save its battery.
+static void busyPoll(const void *) {
+  Buttons::poll();
+  delay(1);
+}
+
 void begin() {
   RefPanel::begin();
   display.setTextColor(FG);
   display.setTextWrap(false);
+  // GxEPD2 sits in a busy-wait for the whole of every refresh -- around 300ms
+  // for a window, 2.6s for a full one -- and left alone it spends that time
+  // doing nothing. Polling the buttons there instead means a hold begun during
+  // a refresh is already registered, with its true start time, by the moment
+  // the refresh returns.
+  display.epd2.setBusyCallback(busyPoll);
 }
 
 void paint(const View &v) {

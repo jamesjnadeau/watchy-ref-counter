@@ -14,6 +14,8 @@
 //   - actions never redraw the menu themselves; open() owns that
 //   - NTP goes through the ESP32 core's SNTP client, not a separate library
 //   - the digits reuse this project's seven-segment drawing, not a font
+//   - "TZ" and "DST" have no counterpart there; the reference firmware takes
+//     its offset from a compile-time constant
 // ---------------------------------------------------------------------------
 
 #include "RefMenu.h"
@@ -25,6 +27,7 @@
 #include "Buzzer.h"
 #include "RefDisplay.h"
 #include "RefPanel.h"
+#include "RefZone.h"
 #include "board.h"
 #include "settings.h"
 
@@ -33,11 +36,50 @@ namespace {
 
 auto &display = RefPanel::display;
 
-const char *const ITEMS[] = {
-    "About", "Vibrate Motor", "Set Time", "Setup WiFi", "Sync NTP",
+// Two of these read their current value rather than being fixed text, so the
+// menu doubles as the status display for the zone and the DST switch.
+enum Item : uint8_t {
+  ITEM_ABOUT,
+  ITEM_BUZZ,
+  ITEM_SET_TIME,
+  ITEM_ZONE,
+  ITEM_DST,
+  ITEM_WIFI,
+  ITEM_SYNC,
+  ITEM_COUNT,
 };
-const uint8_t ITEM_COUNT = sizeof(ITEMS) / sizeof(ITEMS[0]);
 const int16_t MENU_ROW_H = 25;
+
+// Longest is "DST: Auto"; the zone names are capped at eight characters so
+// "TZ: Mountain" is the widest this can get.
+void itemLabel(uint8_t i, char *buf, size_t n) {
+  switch (i) {
+  case ITEM_ABOUT:    snprintf(buf, n, "About"); break;
+  case ITEM_BUZZ:     snprintf(buf, n, "Vibrate Motor"); break;
+  case ITEM_SET_TIME: snprintf(buf, n, "Set Time"); break;
+  case ITEM_ZONE:     snprintf(buf, n, "TZ: %s", RefZone::name(RefZone::index())); break;
+  case ITEM_DST:      snprintf(buf, n, "DST: %s", RefZone::dstAuto() ? "Auto" : "Off"); break;
+  case ITEM_WIFI:     snprintf(buf, n, "Setup WiFi"); break;
+  case ITEM_SYNC:     snprintf(buf, n, "Sync NTP"); break;
+  default:            snprintf(buf, n, "?"); break;
+  }
+}
+
+// "UTC-5", or "UTC-9:30" if a zone ever needs it.
+void formatOffset(char *buf, size_t n, long seconds) {
+  const char sign = seconds < 0 ? '-' : '+';
+  long mag = seconds < 0 ? -seconds : seconds;
+  if (mag > 24L * 3600L) {
+    mag = 24L * 3600L; // no real zone is further out, and this bounds the width
+  }
+  const int hours = (int)(mag / 3600);
+  const int mins  = (int)((mag % 3600) / 60);
+  if (mins == 0) {
+    snprintf(buf, n, "UTC%c%d", sign, hours);
+  } else {
+    snprintf(buf, n, "UTC%c%d:%02d", sign, hours, mins);
+  }
+}
 
 enum SetField : int8_t { SET_HOUR, SET_MINUTE, SET_YEAR, SET_MONTH, SET_DAY };
 
@@ -70,19 +112,21 @@ void drawMenu(uint8_t index, bool partial) {
   display.fillScreen(THEME_BG);
   display.setFont(&FreeMonoBold9pt7b);
 
+  char label[24];
   int16_t x1, y1;
   uint16_t w, h;
   for (uint8_t i = 0; i < ITEM_COUNT; i++) {
+    itemLabel(i, label, sizeof(label));
     const int16_t yPos = MENU_ROW_H + (MENU_ROW_H * i);
     display.setCursor(0, yPos);
     if (i == index) {
-      display.getTextBounds(ITEMS[i], 0, yPos, &x1, &y1, &w, &h);
+      display.getTextBounds(label, 0, yPos, &x1, &y1, &w, &h);
       display.fillRect(x1 - 1, y1 - 10, DISPLAY_WIDTH, h + 15, THEME_FG);
       display.setTextColor(THEME_BG);
     } else {
       display.setTextColor(THEME_FG);
     }
-    display.println(ITEMS[i]);
+    display.println(label);
   }
   display.display(partial);
 }
@@ -99,7 +143,7 @@ void showAbout(RefClock &refClock) {
   display.println("V");
 
   struct tm now;
-  const bool haveTime = refClock.rtc().read(now);
+  const bool haveTime = refClock.localNow(now);
   display.print("Now: ");
   if (!haveTime) {
     display.println("not set");
@@ -148,7 +192,122 @@ void showAbout(RefClock &refClock) {
   display.print("RTC: ");
   display.println(rtcName);
 
+  // The offset actually in force, which is the only way to confirm from the
+  // watch that the daylight saving rule did what was expected of it.
+  char offset[12];
+  formatOffset(offset, sizeof(offset), refClock.utcOffsetSeconds());
+  display.print(RefZone::name(RefZone::index()));
+  display.print(" ");
+  display.print(refClock.zoneAbbrev());
+  display.print(" ");
+  display.println(offset);
+
   display.display(false); // full refresh
+}
+
+// The zone picker. Eleven zones do not fit on a 200 pixel panel, so this
+// scrolls a seven row window and reports the highlighted zone underneath.
+void pickTimeZone() {
+  const int16_t ROW_H     = 22;
+  const uint8_t VISIBLE   = 7;
+  const int16_t FIRST_Y   = 22;
+  const int16_t RULE_Y    = 164;
+  const uint8_t total     = RefZone::count();
+
+  uint8_t index = RefZone::index();
+  uint8_t top   = index < VISIBLE ? 0 : (uint8_t)(index - VISIBLE + 1);
+
+  claimButtons();
+  display.setFullWindow();
+
+  bool first = true;
+  uint32_t lastActivity = millis();
+  while (millis() - lastActivity < MENU_TIMEOUT_MS) {
+    // Keep the highlighted row inside the visible window.
+    if (index < top) {
+      top = index;
+    } else if (index >= top + VISIBLE) {
+      top = (uint8_t)(index - VISIBLE + 1);
+    }
+
+    display.fillScreen(THEME_BG);
+    display.setFont(&FreeMonoBold9pt7b);
+
+    char row[24], offset[12];
+    for (uint8_t slot = 0; slot < VISIBLE && top + slot < total; slot++) {
+      const uint8_t z    = (uint8_t)(top + slot);
+      const int16_t yPos = FIRST_Y + ROW_H * slot;
+      formatOffset(offset, sizeof(offset),
+                   RefZone::standardOffsetMinutes(z) * 60L);
+      snprintf(row, sizeof(row), "%-8s %s", RefZone::name(z), offset);
+
+      if (z == index) {
+        display.fillRect(0, yPos - 17, DISPLAY_WIDTH, ROW_H - 1, THEME_FG);
+        display.setTextColor(THEME_BG);
+      } else {
+        display.setTextColor(THEME_FG);
+      }
+      display.setCursor(2, yPos);
+      display.print(row);
+    }
+
+    display.setTextColor(THEME_FG);
+    display.drawFastHLine(0, RULE_Y, DISPLAY_WIDTH, THEME_FG);
+
+    // Abbreviations on the left, position in the list on the right. The
+    // standard offset is on the row itself, so this is where the reader finds
+    // out whether the zone shifts at all.
+    char abbrev[20];
+    if (RefZone::observesDst(index)) {
+      snprintf(abbrev, sizeof(abbrev), "%s/%s", RefZone::standardAbbrev(index),
+               RefZone::daylightAbbrev(index));
+    } else {
+      snprintf(abbrev, sizeof(abbrev), "%s, no DST",
+               RefZone::standardAbbrev(index));
+    }
+    display.setCursor(2, 180);
+    display.print(abbrev);
+
+    char counter[10];
+    snprintf(counter, sizeof(counter), "%u/%u", (unsigned)(index + 1),
+             (unsigned)total);
+    // FreeMonoBold9pt7b advances 11 pixels a glyph, so right-aligning is
+    // arithmetic rather than a getTextBounds round trip.
+    display.setCursor(DISPLAY_WIDTH - 2 - (int16_t)(strlen(counter) * 11), 180);
+    display.print(counter);
+
+    display.setCursor(2, 196);
+    display.print(RefZone::region(index));
+
+    display.display(!first); // full refresh on the way in, partial to scroll
+    first = false;
+
+    // Poll until something happens, so a settled screen is not redrawn on a
+    // loop for no reason.
+    while (millis() - lastActivity < MENU_TIMEOUT_MS) {
+      if (pressed(PIN_BTN_MENU)) {
+        RefZone::setIndex(index);
+        Buzzer::pulse(BUZZ_CONFIRM_MS);
+        Buttons::waitForRelease();
+        return;
+      }
+      if (pressed(PIN_BTN_BACK)) {
+        Buttons::waitForRelease();
+        return; // leave the stored zone alone
+      }
+      if (pressed(PIN_BTN_UP)) {
+        index = (index == 0) ? (uint8_t)(total - 1) : (uint8_t)(index - 1);
+        lastActivity = millis();
+        break;
+      }
+      if (pressed(PIN_BTN_DOWN)) {
+        index = (uint8_t)((index + 1) % total);
+        lastActivity = millis();
+        break;
+      }
+      delay(BUTTON_POLL_MS);
+    }
+  }
 }
 
 void showBuzz() {
@@ -167,7 +326,7 @@ void showBuzz() {
 // edited blinks, which is what tells you where you are.
 void setTime(RefClock &refClock) {
   struct tm current;
-  if (!refClock.rtc().read(current)) {
+  if (!refClock.localNow(current)) {
     // Nothing sensible on the clock yet, so start from a fixed point rather
     // than from whatever the chip powered up holding.
     current          = {};
@@ -256,7 +415,8 @@ void setTime(RefClock &refClock) {
   t.tm_hour   = hour;
   t.tm_min    = minute;
   t.tm_sec    = 0;
-  refClock.rtc().set(t);
+  // What was typed is local time; the RTC holds UTC, so this converts.
+  refClock.setLocal(t);
 }
 
 void portalCallback(WiFiManager *) {
@@ -297,8 +457,8 @@ void showSyncNTP(RefClock &refClock) {
   beginTextScreen();
   display.setCursor(0, 30);
   display.println("Syncing NTP...");
-  display.print("GMT offset: ");
-  display.println(GMT_OFFSET_SECONDS);
+  display.print("Zone: ");
+  display.println(RefZone::name(RefZone::index()));
   display.display(false); // full refresh
 
   bool connected = WiFi.begin() != WL_CONNECT_FAILED &&
@@ -308,7 +468,7 @@ void showSyncNTP(RefClock &refClock) {
   } else if (refClock.syncFromNtp()) {
     display.println("Sync OK. Time is:");
     struct tm now;
-    if (refClock.rtc().read(now)) {
+    if (refClock.localNow(now)) {
       display.print(now.tm_year + 1900);
       display.print("/");
       printTwo(now.tm_mon + 1);
@@ -318,7 +478,8 @@ void showSyncNTP(RefClock &refClock) {
       printTwo(now.tm_hour);
       display.print(":");
       printTwo(now.tm_min);
-      display.println();
+      display.print(" ");
+      display.println(refClock.zoneAbbrev());
     }
   } else {
     display.println("Sync failed");
@@ -359,12 +520,21 @@ void open(RefClock &refClock) {
     if (pressed(PIN_BTN_MENU)) {
       Buttons::waitForRelease();
       bool holdResult = false;
+      // The DST switch never leaves the menu, so it gets the quick partial
+      // redraw rather than the 2.6s full one every other entry earns.
+      bool quickRedraw = false;
       switch (index) {
-      case 0: showAbout(refClock); holdResult = true; break;
-      case 1: showBuzz(); break;
-      case 2: setTime(refClock); break;
-      case 3: setupWifi(); holdResult = true; break;
-      case 4: showSyncNTP(refClock); break;
+      case ITEM_ABOUT:    showAbout(refClock); holdResult = true; break;
+      case ITEM_BUZZ:     showBuzz(); break;
+      case ITEM_SET_TIME: setTime(refClock); break;
+      case ITEM_ZONE:     pickTimeZone(); break;
+      case ITEM_DST:
+        RefZone::setDstAuto(!RefZone::dstAuto());
+        Buzzer::pulse(BUZZ_CONFIRM_MS);
+        quickRedraw = true;
+        break;
+      case ITEM_WIFI:     setupWifi(); holdResult = true; break;
+      case ITEM_SYNC:     showSyncNTP(refClock); break;
       default: break;
       }
       if (holdResult) {
@@ -372,7 +542,7 @@ void open(RefClock &refClock) {
       }
       Buttons::waitForRelease();
       claimButtons();
-      drawMenu(index, false);
+      drawMenu(index, quickRedraw);
       lastActivity = millis();
     } else if (pressed(PIN_BTN_BACK)) {
       break; // out of the menu entirely
@@ -390,7 +560,7 @@ void open(RefClock &refClock) {
   Buttons::waitForRelease();
   // The loop above read the pins raw. Re-seed the debounce state so a button
   // still settling is not mistaken for a fresh press by the main loop.
-  Buttons::begin();
+  Buttons::resync();
 }
 
 } // namespace RefMenu
