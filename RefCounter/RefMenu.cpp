@@ -50,6 +50,15 @@ enum Item : uint8_t {
 };
 const int16_t MENU_ROW_H = 25;
 
+// Rows that fit on the panel at MENU_ROW_H. The list is longer than this, so
+// drawMenu scrolls a window over it, the way pickTimeZone does over the zones.
+const uint8_t MENU_VISIBLE = 7;
+
+// Top of the visible window. Lives outside drawMenu so it survives the redraws
+// that follow an action, and is reset in open() so the menu never comes up
+// scrolled from last time.
+uint8_t menuTop = 0;
+
 // Longest is "DST: Auto"; the zone names are capped at eight characters so
 // "TZ: Mountain" is the widest this can get.
 void itemLabel(uint8_t i, char *buf, size_t n) {
@@ -108,6 +117,18 @@ void printTwo(int v) {
 }
 
 void drawMenu(uint8_t index, bool partial) {
+  // Keep the highlighted row inside the window, and never scroll past the end.
+  if (index < menuTop) {
+    menuTop = index;
+  } else if (index >= menuTop + MENU_VISIBLE) {
+    menuTop = (uint8_t)(index - MENU_VISIBLE + 1);
+  }
+  if (ITEM_COUNT > MENU_VISIBLE && menuTop > (uint8_t)(ITEM_COUNT - MENU_VISIBLE)) {
+    menuTop = (uint8_t)(ITEM_COUNT - MENU_VISIBLE);
+  } else if (ITEM_COUNT <= MENU_VISIBLE) {
+    menuTop = 0;
+  }
+
   display.setFullWindow();
   display.fillScreen(THEME_BG);
   display.setFont(&FreeMonoBold9pt7b);
@@ -115,9 +136,11 @@ void drawMenu(uint8_t index, bool partial) {
   char label[24];
   int16_t x1, y1;
   uint16_t w, h;
-  for (uint8_t i = 0; i < ITEM_COUNT; i++) {
+  for (uint8_t slot = 0; slot < MENU_VISIBLE && menuTop + slot < ITEM_COUNT;
+       slot++) {
+    const uint8_t i = (uint8_t)(menuTop + slot);
     itemLabel(i, label, sizeof(label));
-    const int16_t yPos = MENU_ROW_H + (MENU_ROW_H * i);
+    const int16_t yPos = MENU_ROW_H + (MENU_ROW_H * slot);
     display.setCursor(0, yPos);
     if (i == index) {
       display.getTextBounds(label, 0, yPos, &x1, &y1, &w, &h);
@@ -512,6 +535,7 @@ void open(RefClock &refClock) {
   Buttons::waitForRelease();
 
   uint8_t index = 0;
+  menuTop = 0;
   drawMenu(index, false);
   claimButtons();
 
