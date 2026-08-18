@@ -107,7 +107,7 @@ and it's shown spelled out on the Custom editor instead, the one preset that
 can change it.
 
 The six fixed presets are read-only. `Edit Custom` opens the one preset that
-can be changed: five fields — Long, Short, Warn 1, Warn 2, Final from — with
+can be changed: five fields — Long, Short, Warn 1, Warn 2, Final — with
 MENU stepping to the next field and committing once past the last one, BACK
 stepping back, and UP/DOWN changing the value under the cursor, the same
 interaction Set Time uses. The two clocks clamp to 1–199 seconds; the three
@@ -261,15 +261,18 @@ settings change with no clock write and no drift, and it means an NTP sync
 needs no offset applied to it.
 
 Drift is handled two ways. **Set Time** sets it by hand, in local time.
-**Sync NTP** sets it from the internet, and the same sync also runs automatically every
-`NTP_RESYNC_HOURS` (24 by default) once WiFi credentials have been saved. A
-PCF8563 drifts roughly a minute a month; a daily sync keeps that under a
-second. The DS3231 in V1.0 is temperature compensated and drifts far less.
+**Sync NTP** sets it from the internet, on demand from the menu. It can also
+run automatically every `NTP_RESYNC_HOURS` once WiFi credentials have been
+saved — but the shipped default is 0, which means never automatically at
+all. That is deliberate: the author would rather sync by hand than have an
+automatic one land in the middle of a game. Set it to a nonzero value and
+reflash to turn automatic resync on. A PCF8563 drifts roughly a minute a
+month, so even a daily sync keeps that under a second. The DS3231 in V1.0 is
+temperature compensated and drifts far less.
 
-An automatic sync blocks for several seconds while the radio comes up, so it is
-held off until the watch has been left untouched for `AUTO_SYNC_IDLE_MS` (60s),
-and it never runs while a clock is counting. Set `NTP_RESYNC_HOURS` to 0 to
-only ever sync by hand.
+An automatic sync blocks for several seconds while the radio comes up, so
+when enabled it is held off until the watch has been left untouched for
+`AUTO_SYNC_IDLE_MS` (60s), and it never runs while a clock is counting.
 
 The header clock is repainted on its own partial window when the minute rolls
 over, so keeping it live costs one ~400ms refresh a minute rather than a whole
@@ -335,7 +338,7 @@ chips and an NTP call — were smaller than the dependency they justified.
 **Digits are drawn, not typed.** The countdown is seven filled rectangles per
 digit rather than a font glyph. That keeps the countdown's exact bounding box
 knowable, which is what lets the partial-update window below be hard-coded
-safely — the claim now rests on `RefSegments::layoutCount`, which is
+safely — the claim now rests on `layoutCount` in `RefSegments.cpp`, which is
 host-tested against its own 199 ceiling, rather than on the countdown always
 being exactly two digits — and it drops the 14KB DSEG7 font from the build.
 The segment geometry is four numbers (`SegStyle`) per size, instantiated in
@@ -397,11 +400,11 @@ static const uint32_t SLEEP_HOLD_MS        = 1000; // hold for low power mode
 static const uint32_t BUZZ_EXPIRE_MS       = 1000; // buzz at zero
 static const uint8_t  WARNING_BUZZ_COUNT   = 1;    // buzzes at the first mark
 static const uint8_t  WARNING_BUZZ_COUNT_2 = 2;    // buzzes at the second
-static const bool     DARK_MODE           = false; // false = black on white
+static const bool     DARK_MODE           = true;  // true = white on black
 static const bool     CLOCK_24_HOUR       = false;
 static const char     DEFAULT_TIME_ZONE[] = "Eastern"; // until set in the menu
 static const bool     DEFAULT_DST_AUTO    = true; // apply the US rule by date
-static const uint32_t NTP_RESYNC_HOURS    = 24;   // 0 = only sync by hand
+static const uint32_t NTP_RESYNC_HOURS    = 0;    // 0 = only sync by hand
 ```
 
 `DEFAULT_SPORT` and the five `CUSTOM_*` values are likewise only a starting
@@ -520,10 +523,13 @@ defaults apply.
 `tests/segments_test.cpp` pins `layoutCount`'s numbers for the two styles the
 panel actually uses — the two-digit and three-digit layouts, the exact pixel
 `x` positions, the 100/99 boundary where the hundreds bar appears and
-disappears, clamping above 199, and that no digit runs off either edge of the
-panel for every value 0 through 199. It checks `layoutRows` the same way,
-including the invariant that the upper, middle and lower segment rows abut
-with no gap or overlap.
+disappears, and clamping above 199 — then checks, exhaustively and for both
+the big (RUNNING/EXPIRED) and small (Ready) styles, that no digit runs off
+either edge of the panel for every value 0 through 199. SMALL is not a
+theoretical case: the Ready screen draws both of the active preset's clocks
+in it, and Lacrosse, Base NCAA and Custom all reach past 100. It checks
+`layoutRows` the same way, including the invariant that the upper, middle
+and lower segment rows abut with no gap or overlap.
 
 `tests/sport_test.cpp` checks the shipped preset table against the numbers in
 *Buzz pattern* above, that `Custom` is always the last entry, that an out-of-range index

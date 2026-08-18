@@ -20,15 +20,28 @@ static void expectEq(const char *what, int got, int want) {
   }
 }
 
-static void expectFits(const char *what, const CountLayout &l, const SegStyle &s) {
-  const int16_t left  = l.hundreds ? l.oneX : l.tensX;
-  const int16_t right = l.onesX + s.w;
-  if (left < 0 || right > SCREEN_W) {
-    printf("FAIL %-44s spans %d..%d\n", what, left, right);
-    failures++;
-  } else {
-    printf("ok   %-44s spans %d..%d\n", what, left, right);
+// Checks every value 0..199 for one style and prints a single summary line,
+// rather than one line per value -- 400 "ok" lines (200 values x 2 styles)
+// would drown the rest of the output. A failing value still gets its own
+// line, so a regression is never silent.
+static void expectAllFit(const char *styleName, const SegStyle &s) {
+  int  localFailures = 0;
+  char what[64];
+  for (uint16_t v = 0; v <= 199; v++) {
+    const CountLayout l     = layoutCount(v, s, SCREEN_W);
+    const int16_t     left  = l.hundreds ? l.oneX : l.tensX;
+    const int16_t     right = l.onesX + s.w;
+    if (left < 0 || right > SCREEN_W) {
+      snprintf(what, sizeof(what), "%s %u on panel", styleName, (unsigned)v);
+      printf("FAIL %-44s spans %d..%d\n", what, left, right);
+      localFailures++;
+    }
   }
+  snprintf(what, sizeof(what), "%s on panel, every value 0..199", styleName);
+  if (localFailures == 0) {
+    printf("ok   %-44s all 200 values fit 0..%d\n", what, SCREEN_W);
+  }
+  failures += localFailures;
 }
 
 int main() {
@@ -72,12 +85,12 @@ int main() {
   expectEq("120 small: width", l.width, 88);
   expectEq("120 small: one x", l.oneX, 56);
 
-  // Nothing may run off either edge of the panel, at any value.
-  for (uint16_t v = 0; v <= 199; v++) {
-    char what[48];
-    snprintf(what, sizeof(what), "%u big on panel", (unsigned)v);
-    expectFits(what, layoutCount(v, BIG, SCREEN_W), BIG);
-  }
+  // Nothing may run off either edge of the panel, at any value, in either
+  // style RefDisplay actually draws with. SMALL matters here as much as BIG:
+  // the Ready screen stacks both of the active preset's clocks in SMALL, and
+  // Lacrosse and Base NCAA both reach 120, with Custom reaching 199.
+  expectAllFit("BIG", BIG);
+  expectAllFit("SMALL", SMALL);
 
   // Segment row arithmetic must stay in sync between drawDigit and drawOneBar.
   // These are the concrete numbers BIG and SMALL use.
