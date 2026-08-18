@@ -2,6 +2,7 @@
 
 #include "Buttons.h"
 #include "RefPanel.h"
+#include "RefSegments.h"
 #include "board.h"
 #include "settings.h"
 
@@ -34,10 +35,6 @@ const int16_t BATT_Y = 14;
 const int16_t BATT_W = 26;
 const int16_t BATT_H = 12;
 
-// The window refreshed on each tick. It has to cover the large digits, which
-// span x 22..178 and y 44..160. GxEPD2 rounds x and w out to a multiple of 8
-// anyway, so they are pre-aligned here to keep the drawn and refreshed areas
-// honest with each other.
 // The header strip, refreshed on its own when the minute rolls over. Covers
 // the clock, the battery gauge and the rule underneath them.
 const int16_t HEADER_WIN_X = 0;
@@ -45,9 +42,14 @@ const int16_t HEADER_WIN_Y = 0;
 const int16_t HEADER_WIN_W = 200;
 const int16_t HEADER_WIN_H = 40;
 
-const int16_t DIGITS_WIN_X = 16;
+// The window refreshed on each tick. It has to cover the widest the countdown
+// can get, which is 199 in STYLE_BIG: a skinny hundreds bar at x 6 out to the
+// right edge of the ones digit at x 193. GxEPD2 rounds x and w out to a
+// multiple of 8 regardless, so this is the full panel width rather than a
+// nearly-full one pretending to be tighter.
+const int16_t DIGITS_WIN_X = 0;
 const int16_t DIGITS_WIN_Y = 40;
-const int16_t DIGITS_WIN_W = 176;
+const int16_t DIGITS_WIN_W = 200;
 const int16_t DIGITS_WIN_H = 124;
 
 // --- Seven segment digits --------------------------------------------------
@@ -64,12 +66,6 @@ const int16_t DIGITS_WIN_H = 124;
 //    e     c
 //    |     |
 //     --d--
-struct SegStyle {
-  int16_t w;   // width of one digit
-  int16_t h;   // height of one digit
-  int16_t t;   // segment thickness
-  int16_t gap; // space between the two digits
-};
 
 const SegStyle STYLE_BIG   = {70, 116, 15, 16}; // 156 x 116 for two digits
 const SegStyle STYLE_SMALL = {32, 52, 8, 8};    // 72 x 52 for two digits
@@ -121,9 +117,28 @@ void drawPair(int16_t x, int16_t y, uint16_t value, const SegStyle &s,
   drawDigit(x + s.w + s.gap, y, (uint8_t)(value % 10), s, colour);
 }
 
-// A zero-padded two digit value, centred horizontally.
-void drawValue(uint16_t value, int16_t y, const SegStyle &s) {
-  drawPair((SCREEN_W - (s.w * 2 + s.gap)) / 2, y, value, s, FG);
+// The skinny leading "1": segments b and c only, at the same heights drawDigit
+// puts them, but one thickness wide instead of a whole digit.
+void drawOneBar(int16_t x, int16_t y, const SegStyle &s, uint16_t colour) {
+  const int16_t t    = s.t;
+  const int16_t midY = (s.h - t) / 2;
+  const int16_t upH  = midY - t;
+  const int16_t lowY = midY + t;
+  const int16_t lowH = s.h - t - lowY;
+
+  display.fillRect(x, y + t, t, upH, colour);
+  display.fillRect(x, y + lowY, t, lowH, colour);
+}
+
+// A countdown value, 0..199, centred horizontally. Where each glyph goes is
+// RefSegments' decision, so it can be checked on a host.
+void drawCount(uint16_t value, int16_t y, const SegStyle &s, uint16_t colour) {
+  const CountLayout l = layoutCount(value, s, SCREEN_W);
+  if (l.hundreds) {
+    drawOneBar(l.oneX, y, s, colour);
+  }
+  drawDigit(l.tensX, y, l.tens, s, colour);
+  drawDigit(l.onesX, y, l.ones, s, colour);
 }
 
 float batteryVolts() {
@@ -189,13 +204,13 @@ void drawRowMarker(int16_t rowY, const SegStyle &s) {
 void drawBody(const View &v) {
   if (v.state == STATE_IDLE) {
     // Stack both clocks so they line up with the two right-hand buttons.
-    drawValue(TIMER_LONG_SECONDS, ROW1_Y, STYLE_SMALL);
+    drawCount(TIMER_LONG_SECONDS, ROW1_Y, STYLE_SMALL, FG);
     drawRowMarker(ROW1_Y, STYLE_SMALL);
-    drawValue(TIMER_SHORT_SECONDS, ROW2_Y, STYLE_SMALL);
+    drawCount(TIMER_SHORT_SECONDS, ROW2_Y, STYLE_SMALL, FG);
     drawRowMarker(ROW2_Y, STYLE_SMALL);
     return;
   }
-  drawValue(v.secondsLeft, BIG_Y, STYLE_BIG);
+  drawCount(v.secondsLeft, BIG_Y, STYLE_BIG, FG);
 }
 
 void drawFooter(const View &v) {
@@ -274,7 +289,7 @@ void renderHeader(const View &v) {
 void renderDigits(const View &v) {
   display.setTextColor(FG);
   display.fillRect(DIGITS_WIN_X, DIGITS_WIN_Y, DIGITS_WIN_W, DIGITS_WIN_H, BG);
-  drawValue(v.secondsLeft, BIG_Y, STYLE_BIG);
+  drawCount(v.secondsLeft, BIG_Y, STYLE_BIG, FG);
   display.displayWindow(DIGITS_WIN_X, DIGITS_WIN_Y, DIGITS_WIN_W, DIGITS_WIN_H);
 }
 
