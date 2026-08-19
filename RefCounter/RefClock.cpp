@@ -5,17 +5,26 @@
 #include <esp_chip_info.h>
 #include <esp_sntp.h>
 
+#include "RefSyncSchedule.h"
 #include "RefZone.h"
 #include "board.h"
 #include "settings.h"
 
 namespace {
 
-// All three survive deep sleep, so low power mode neither restarts the resync
-// interval nor resets the uptime shown in the menu.
+// All four survive deep sleep, so low power mode neither restarts the resync
+// schedule nor resets the uptime shown in the menu. lastActivity is the
+// anchor an automatic resync counts its quiet period from -- it must live
+// here too, or every deep-sleep wake would look like a fresh idle watch.
 RTC_DATA_ATTR time_t lastSyncAttempt = 0;
 RTC_DATA_ATTR time_t lastSyncOk      = 0;
 RTC_DATA_ATTR time_t bootedAt        = 0;
+RTC_DATA_ATTR time_t lastActivity    = 0;
+
+// Unlike the above, this must NOT survive deep sleep: it limits a WiFi-less
+// watch to one sync attempt per wake cycle, rather than spinning on an unset
+// RTC every time syncDue() is polled.
+bool unsetSyncTried = false;
 
 } // namespace
 
@@ -33,6 +42,14 @@ void RefClock::begin(bool coldBoot) {
 
   if (coldBoot) {
     bootedAt = _rtc.epoch();
+  }
+
+  // Give a first boot an anchor to count the quiet period from. Only when it
+  // is still 0, though: restamping on every wake -- including the deep-sleep
+  // wake this schedule itself arms -- would push the quiet period out
+  // forever and the resync would never fire.
+  if (lastActivity == 0) {
+    lastActivity = _rtc.epoch();
   }
 }
 
@@ -124,18 +141,29 @@ bool RefClock::connectAndSync() {
   return ok;
 }
 
+void RefClock::noteActivity() { lastActivity = _rtc.epoch(); }
+
 bool RefClock::syncDue() {
   if (NTP_RESYNC_HOURS == 0) {
     return false;
   }
-  if (lastSyncAttempt == 0) {
-    return true; // never tried since the battery went in
+  if (_rtc.epoch() == 0) {
+    // An unset RTC has no NTP source but WiFi, so this is the only way it
+    // ever gets a time. Try once per wake cycle rather than every time the
+    // sketch happens to poll, since a WiFi-less watch would otherwise spin.
+    if (unsetSyncTried) {
+      return false;
+    }
+    unsetSyncTried = true;
+    return true;
   }
-  const time_t now = _rtc.epoch();
-  if (now == 0 || now < lastSyncAttempt) {
-    return true; // unset, or the clock moved backwards
-  }
-  return (uint32_t)(now - lastSyncAttempt) >= NTP_RESYNC_HOURS * 3600UL;
+  return secondsUntilSyncDue() == 0;
+}
+
+uint32_t RefClock::secondsUntilSyncDue() {
+  return RefSyncSchedule::secondsUntilDue(_rtc.epoch(), lastActivity,
+                                           lastSyncAttempt, NTP_RESYNC_HOURS,
+                                           NTP_MIN_SYNC_INTERVAL_HOURS);
 }
 
 float RefClock::batteryVolts() {

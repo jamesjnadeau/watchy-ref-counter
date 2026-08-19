@@ -45,8 +45,19 @@ public:
   // Connect, sync, drop the radio. Blocks for several seconds.
   bool connectAndSync();
 
-  // True once NTP_RESYNC_HOURS have passed since the last attempt.
+  // Stamps the moment of a button press or sleep entry. This is the anchor an
+  // automatic resync counts its quiet period from, so the sketch calls it on
+  // every button-driven state change and on sleep entry.
+  void noteActivity();
+
+  // True once the watch has sat untouched for NTP_RESYNC_HOURS and at least
+  // NTP_MIN_SYNC_INTERVAL_HOURS have passed since the last attempt. Also true,
+  // once per wake cycle, if the RTC has never been set at all.
   bool syncDue();
+
+  // Seconds until syncDue() would next return true, for arming the deep-sleep
+  // timer. RefSyncSchedule::NEVER if no automatic sync is due at all.
+  uint32_t secondsUntilSyncDue();
 
   // Battery terminal voltage, and 10 / 15 / 20 / 30 for the board revision.
   float batteryVolts();
