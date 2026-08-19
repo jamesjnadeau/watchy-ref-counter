@@ -10,6 +10,9 @@
 //
 // Deliberate differences from the reference:
 //   - no "Show Accelerometer"; nothing on a play clock reads the sensor
+//   - no "Vibrate Motor" buzz test; the buzzer proves itself every countdown
+//   - "Sync NTP" is only listed once WiFi credentials have been saved, since
+//     with none stored it could only ever report a failure
 //   - colours follow DARK_MODE rather than being fixed black on white
 //   - actions never redraw the menu themselves; open() owns that
 //   - NTP goes through the ESP32 core's SNTP client, not a separate library
@@ -26,8 +29,10 @@
 #include "Buttons.h"
 #include "Buzzer.h"
 #include "RefDisplay.h"
+#include "RefMenuItems.h"
 #include "RefPanel.h"
 #include "RefSport.h"
+#include "RefWifi.h"
 #include "RefZone.h"
 #include "board.h"
 #include "settings.h"
@@ -37,49 +42,23 @@ namespace {
 
 auto &display = RefPanel::display;
 
-// Three of these read their current value rather than being fixed text, so the
-// menu doubles as the status display for the sport, the zone and the DST
-// switch. The widest this gets is "Sport: Base NCAA", 16 glyphs.
-enum Item : uint8_t {
-  ITEM_SPORT,
-  ITEM_EDIT_CUSTOM,
-  ITEM_ABOUT,
-  ITEM_BUZZ,
-  ITEM_SET_TIME,
-  ITEM_ZONE,
-  ITEM_DST,
-  ITEM_WIFI,
-  ITEM_SYNC,
-  ITEM_COUNT,
-};
 const int16_t MENU_ROW_H = 25;
 
-// Rows that fit on the panel at MENU_ROW_H. The list is longer than this, so
-// drawMenu scrolls a window over it, the way pickTimeZone does over the zones.
+// Rows that fit on the panel at MENU_ROW_H. With WiFi set up the list is one
+// row longer than this, so drawMenu scrolls a window over it, the way
+// pickTimeZone does over the zones; without it the list fits exactly.
 const uint8_t MENU_VISIBLE = 7;
+
+// The rows currently on offer, in order, and how many there are. Rebuilt on
+// the way in and after every action, because "Setup WiFi" can add or remove
+// "Sync NTP" underneath the user.
+uint8_t visible[ITEM_COUNT];
+uint8_t visibleCount = 0;
 
 // Top of the visible window. Lives outside drawMenu so it survives the redraws
 // that follow an action, and is reset in open() so the menu never comes up
 // scrolled from last time.
 uint8_t menuTop = 0;
-
-// drawMenu's label buffer is char[24]: the widest this ever writes is
-// "Sport: Base NCAA" at 16 glyphs, leaving room to spare rather than sizing
-// the buffer to the exact width and hoping nothing grows past it.
-void itemLabel(uint8_t i, char *buf, size_t n) {
-  switch (i) {
-  case ITEM_SPORT:    snprintf(buf, n, "Sport: %s", RefSport::active().name); break;
-  case ITEM_EDIT_CUSTOM: snprintf(buf, n, "Edit Custom"); break;
-  case ITEM_ABOUT:    snprintf(buf, n, "About"); break;
-  case ITEM_BUZZ:     snprintf(buf, n, "Vibrate Motor"); break;
-  case ITEM_SET_TIME: snprintf(buf, n, "Set Time"); break;
-  case ITEM_ZONE:     snprintf(buf, n, "TZ: %s", RefZone::name(RefZone::index())); break;
-  case ITEM_DST:      snprintf(buf, n, "DST: %s", RefZone::dstAuto() ? "Auto" : "Off"); break;
-  case ITEM_WIFI:     snprintf(buf, n, "Setup WiFi"); break;
-  case ITEM_SYNC:     snprintf(buf, n, "Sync NTP"); break;
-  default:            snprintf(buf, n, "?"); break;
-  }
-}
 
 // "UTC-5", or "UTC-9:30" if a zone ever needs it.
 void formatOffset(char *buf, size_t n, long seconds) {
@@ -123,16 +102,18 @@ void printTwo(int v) {
   display.print(v);
 }
 
-void drawMenu(uint8_t index, bool partial) {
+// `slot` is a position in `visible`, not an Item id.
+void drawMenu(uint8_t slot, bool partial) {
   // Keep the highlighted row inside the window, and never scroll past the end.
-  if (index < menuTop) {
-    menuTop = index;
-  } else if (index >= menuTop + MENU_VISIBLE) {
-    menuTop = (uint8_t)(index - MENU_VISIBLE + 1);
+  if (slot < menuTop) {
+    menuTop = slot;
+  } else if (slot >= menuTop + MENU_VISIBLE) {
+    menuTop = (uint8_t)(slot - MENU_VISIBLE + 1);
   }
-  if (ITEM_COUNT > MENU_VISIBLE && menuTop > (uint8_t)(ITEM_COUNT - MENU_VISIBLE)) {
-    menuTop = (uint8_t)(ITEM_COUNT - MENU_VISIBLE);
-  } else if (ITEM_COUNT <= MENU_VISIBLE) {
+  if (visibleCount > MENU_VISIBLE &&
+      menuTop > (uint8_t)(visibleCount - MENU_VISIBLE)) {
+    menuTop = (uint8_t)(visibleCount - MENU_VISIBLE);
+  } else if (visibleCount <= MENU_VISIBLE) {
     menuTop = 0;
   }
 
@@ -140,16 +121,16 @@ void drawMenu(uint8_t index, bool partial) {
   display.fillScreen(THEME_BG);
   display.setFont(&FreeMonoBold9pt7b);
 
-  char label[24];
+  char label[ITEM_LABEL_MAX];
   int16_t x1, y1;
   uint16_t w, h;
-  for (uint8_t slot = 0; slot < MENU_VISIBLE && menuTop + slot < ITEM_COUNT;
-       slot++) {
-    const uint8_t i = (uint8_t)(menuTop + slot);
-    itemLabel(i, label, sizeof(label));
-    const int16_t yPos = MENU_ROW_H + (MENU_ROW_H * slot);
+  for (uint8_t row = 0; row < MENU_VISIBLE && menuTop + row < visibleCount;
+       row++) {
+    const uint8_t s = (uint8_t)(menuTop + row);
+    itemLabel(visible[s], label, sizeof(label));
+    const int16_t yPos = MENU_ROW_H + (MENU_ROW_H * row);
     display.setCursor(0, yPos);
-    if (i == index) {
+    if (s == slot) {
       display.getTextBounds(label, 0, yPos, &x1, &y1, &w, &h);
       display.fillRect(x1 - 1, y1 - 10, DISPLAY_WIDTH, h + 15, THEME_FG);
       display.setTextColor(THEME_BG);
@@ -447,17 +428,6 @@ void pickTimeZone() {
   }
 }
 
-void showBuzz() {
-  display.setFullWindow();
-  display.fillScreen(THEME_BG);
-  display.setFont(&FreeMonoBold9pt7b);
-  display.setTextColor(THEME_FG);
-  display.setCursor(70, 80);
-  display.println("Buzz!");
-  display.display(false); // full refresh
-  Buzzer::pulse(3, BUZZ_SHORT_MS, BUZZ_GAP_MS);
-}
-
 // MENU steps forward through the fields and commits past the last one, BACK
 // steps back, UP and DOWN change the value under the cursor. The field being
 // edited blinks, which is what tells you where you are.
@@ -729,7 +699,12 @@ void setupWifi() {
   wifiManager.setAPCallback(portalCallback);
 
   beginTextScreen();
-  if (!wifiManager.autoConnect(WIFI_AP_NAME)) {
+  // resetSettings() above wiped whatever was stored, so the flag has to track
+  // the outcome both ways: a setup that fails or times out really has left the
+  // watch with no credentials, and "Sync NTP" goes away again with them.
+  const bool ok = wifiManager.autoConnect(WIFI_AP_NAME);
+  RefWifi::setConfigured(ok);
+  if (!ok) {
     display.println("Setup failed or");
     display.println("timed out.");
   } else {
@@ -801,33 +776,34 @@ void open(RefClock &refClock) {
   // an immediate selection of the first entry.
   Buttons::waitForRelease();
 
-  uint8_t index = 0;
+  visibleCount = buildVisible(RefWifi::configured(), visible);
+  uint8_t slot = 0;
   menuTop = 0;
-  drawMenu(index, false);
+  drawMenu(slot, false);
   claimButtons();
 
   uint32_t lastActivity = millis();
   while (millis() - lastActivity < MENU_TIMEOUT_MS) {
     if (pressed(PIN_BTN_MENU)) {
       Buttons::waitForRelease();
+      const uint8_t item = visible[slot];
       bool holdResult = false;
       // The DST switch never leaves the menu, so it gets the quick partial
       // redraw rather than the 2.6s full one every other entry earns.
       bool quickRedraw = false;
-      switch (index) {
-      case ITEM_SPORT:       pickSport(); break;
-      case ITEM_EDIT_CUSTOM: editCustom(); break;
+      switch (item) {
       case ITEM_ABOUT:    showAbout(refClock); holdResult = true; break;
-      case ITEM_BUZZ:     showBuzz(); break;
-      case ITEM_SET_TIME: setTime(refClock); break;
+      case ITEM_SYNC:     showSyncNTP(refClock); break;
       case ITEM_ZONE:     pickTimeZone(); break;
       case ITEM_DST:
         RefZone::setDstAuto(!RefZone::dstAuto());
         Buzzer::pulse(BUZZ_CONFIRM_MS);
         quickRedraw = true;
         break;
+      case ITEM_SET_TIME: setTime(refClock); break;
       case ITEM_WIFI:     setupWifi(); holdResult = true; break;
-      case ITEM_SYNC:     showSyncNTP(refClock); break;
+      case ITEM_SPORT:       pickSport(); break;
+      case ITEM_EDIT_CUSTOM: editCustom(); break;
       default: break;
       }
       if (holdResult) {
@@ -835,17 +811,23 @@ void open(RefClock &refClock) {
       }
       Buttons::waitForRelease();
       claimButtons();
-      drawMenu(index, quickRedraw);
+      // Setup WiFi can make "Sync NTP" appear above it, which moves that row
+      // and every row below it down a slot, so the highlight follows the item
+      // the user just ran rather than the slot number it used to sit at.
+      visibleCount = buildVisible(RefWifi::configured(), visible);
+      const int8_t back = slotOf(visible, visibleCount, item);
+      slot = back >= 0 ? (uint8_t)back : 0;
+      drawMenu(slot, quickRedraw);
       lastActivity = millis();
     } else if (pressed(PIN_BTN_BACK)) {
       break; // out of the menu entirely
     } else if (pressed(PIN_BTN_UP)) {
-      index = (index == 0) ? ITEM_COUNT - 1 : index - 1;
-      drawMenu(index, true);
+      slot = (slot == 0) ? (uint8_t)(visibleCount - 1) : (uint8_t)(slot - 1);
+      drawMenu(slot, true);
       lastActivity = millis();
     } else if (pressed(PIN_BTN_DOWN)) {
-      index = (index + 1) % ITEM_COUNT;
-      drawMenu(index, true);
+      slot = (uint8_t)((slot + 1) % visibleCount);
+      drawMenu(slot, true);
       lastActivity = millis();
     }
   }

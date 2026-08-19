@@ -180,9 +180,10 @@ Starting a new clock during that window cancels the return.
 **Menu** — held open from Ready. Navigation follows the reference: UP/DOWN to
 move, MENU (bottom left) to select, BACK (top left) to leave. It also drops
 back to Ready by itself after `MENU_TIMEOUT_MS`, so a menu opened by accident
-cannot strand you mid-game. Nine entries no longer fit the panel at once, so
-the list scrolls a seven-row window, keeping the highlighted entry in view the
-same way the time zone picker already does.
+cannot strand you mid-game. Eight entries do not fit the panel at once, so the
+list scrolls a seven-row window, keeping the highlighted entry in view the same
+way the time zone picker already does. Before WiFi has been set up there are
+only seven and it does not scroll at all.
 
 Every screen the menu opens times out on the same rule, and a timeout always
 **discards**: Set Time leaves the clock alone, Edit Custom leaves the stored
@@ -193,24 +194,33 @@ hold the panel refreshing until the battery went flat.
 
 | Entry | What it does |
 | --- | --- |
-| Sport: *name* | Pick one of the seven presets from a scrolling list |
-| Edit Custom | Set the five Custom fields by hand |
 | About | Version, board revision, battery, time, uptime, last sync, RTC type |
-| Vibrate Motor | Buzz test |
-| Set Time | Set the clock by hand, no WiFi needed |
+| Sync NTP | Connect and set the clock from `NTP_SERVER`. Only listed once **Setup WiFi** has connected |
 | TZ: *name* | Pick a US time zone from a scrolling list |
 | DST: Auto/Off | Turn the daylight saving rule on or off |
+| Set Time | Set the clock by hand, no WiFi needed |
 | Setup WiFi | Captive portal to save credentials |
-| Sync NTP | Connect and set the clock from `NTP_SERVER` |
+| Sport: *name* | Pick one of the seven presets from a scrolling list |
+| Edit Custom | Set the five Custom fields by hand |
 
 The **Sport**, **TZ** and **DST** rows show their current value rather than
 fixed text, so the menu doubles as the status display for all three. **DST**
 toggles in place and redraws with a fast partial refresh; everything else
 opens a screen.
 
+**Sync NTP** is hidden until **Setup WiFi** has connected successfully, since
+with no credentials stored it could only ever report a failure. The watch
+remembers that in NVS (`RefWifi.cpp`), so it survives a reflash — but a watch
+upgraded from a firmware without that flag has nothing stored and will hide the
+row until **Setup WiFi** is run once more. A setup that fails or times out
+clears the flag again, correctly: that screen wipes the saved credentials
+before it raises its access point.
+
 There is no "Show Accelerometer". The reference has one, but nothing on a play
 clock reads the sensor, and leaving it out means the BMA423 is never powered
-up at all.
+up at all. There is no "Vibrate Motor" buzz test either — the buzzer announces
+every warning mark and every expiry, so a dedicated screen for it earned a menu
+row it did not need.
 
 ## Time zones and daylight saving
 
@@ -314,7 +324,9 @@ watchy-ref-counter/
     ├── RefZone.h/.cpp     US time zones and the daylight saving rule
     ├── RefSegments.h/.cpp  where the countdown digits land, host-tested
     ├── RefSport.h/.cpp     sport presets and the custom slot
-    └── RefMenu.h/.cpp     the settings menu
+    ├── RefWifi.h/.cpp      whether WiFi has ever been set up, host-tested
+    ├── RefMenuItems.h/.cpp the menu's row order and labels, host-tested
+    └── RefMenu.h/.cpp      the settings menu
 ```
 
 ### Dependencies
@@ -518,11 +530,13 @@ working, it is a cable or port problem rather than a timing one.
 
 ## Testing
 
-`RefZone.cpp`, `RefSegments.cpp` and `RefSport.cpp` are pure arithmetic and
-compile on a host, so the daylight saving rule, the digit layout and the
-preset table are all checked off the watch — this is exactly the kind of bug
-(a changeover date, a digit running off the panel, a clamp) that is expensive
-to find on hardware and cheap to catch here.
+`RefZone.cpp`, `RefSegments.cpp`, `RefSport.cpp`, `RefWifi.cpp` and
+`RefMenuItems.cpp` carry no panel and no GPIO, so they compile on a host and
+the daylight saving rule, the digit layout, the preset table, the WiFi flag and
+the menu's row order are all checked off the watch — this is exactly the kind
+of bug (a changeover date, a digit running off the panel, a clamp, a menu row
+in the wrong place) that is expensive to find on hardware and cheap to catch
+here.
 
 ```bash
 ./tests/run.sh
@@ -557,6 +571,18 @@ which the time zone tests deliberately never do. With it on, `sport_test`
 confirms the selected sport and the edited Custom fields both survive a
 simulated reboot (a fresh `RefSport::begin()` call), and that a garbage index
 left in NVS clamps back to the first preset rather than being trusted.
+
+`tests/wifi_test.cpp` checks that a watch with nothing stored — or with NVS
+unavailable — reads as never set up, and that the flag survives a simulated
+reboot in both directions.
+
+`tests/menu_items_test.cpp` pins the menu's row order with and without WiFi
+set up, that **Sync NTP** is absent in the first case and second in the
+second, and that **Setup WiFi** shifts from slot 4 to slot 5 when it appears —
+which is the case the menu's redraw depends on, since running **Setup WiFi**
+inserts a row above the one the user is standing on. It also checks that every
+label fits the 18 glyphs the panel has room for, and that the removed buzz
+test has not crept back in.
 
 Nothing else here has automated tests, and none of this has run on hardware —
 see below.
