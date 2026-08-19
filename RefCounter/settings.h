@@ -115,16 +115,15 @@ static const uint16_t WIFI_AP_TIMEOUT_S  = 120;
 
 // The RTC drifts a little every day - roughly a minute a month on the PCF8563
 // fitted to V2.0. Re-syncing over WiFi keeps it well under a second, but a
-// sync blocks
-// for several seconds while the radio comes up, so it is only worth doing
-// when nobody is around to notice. An automatic resync therefore waits for
-// both of these to be true: the watch has sat untouched (no button press, no
-// sleep entry) for NTP_RESYNC_HOURS, and at least NTP_MIN_SYNC_INTERVAL_HOURS
-// have passed since the last attempt, so a run of idle moments cannot trigger
-// back-to-back radio activity. The deep-sleep timer is armed against this
-// same schedule, so the watch wakes itself for the resync rather than relying
-// on the next button press. Set NTP_RESYNC_HOURS to 0 to only ever sync by
-// hand from the menu.
+// sync blocks for several seconds while the radio comes up, so it is only
+// worth doing when nobody is around to notice. An automatic resync therefore
+// waits for both of these to be true: the watch has sat untouched (no button
+// press, no sleep entry) for NTP_RESYNC_HOURS, and at least
+// NTP_MIN_SYNC_INTERVAL_HOURS have passed since the last attempt, so a run of
+// idle moments cannot trigger back-to-back radio activity. The deep-sleep
+// timer is armed against this same schedule, so the watch wakes itself for the
+// resync rather than relying on the next button press. Set NTP_RESYNC_HOURS to
+// 0 to only ever sync by hand from the menu.
 static const uint32_t NTP_RESYNC_HOURS = 3;
 static const uint32_t NTP_MIN_SYNC_INTERVAL_HOURS = 24;
 

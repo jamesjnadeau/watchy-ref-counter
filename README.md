@@ -607,11 +607,14 @@ minutes; later builds take under a minute.
 The watch must be awake to enumerate over USB. If it is in low power mode, hold
 the top-left button to wake it first.
 
-On the **C6 board**, hold the **bottom-left (MENU)** button while plugging in
-to force the bootloader — there MENU is GPIO 0, the ESP32-C6 strapping pin.
-The V2.0 has no button on GPIO 0 and relies on the USB serial chip's
-auto-reset instead, so there is no button to hold; if auto-reset is not
-working, it is a cable or port problem rather than a timing one.
+On the **C6 board**, there is no button to hold: the download-boot strapping
+pin is IO9, and this board deliberately puts no button on it, so a stuck or
+dirty button can never drop the watch into the bootloader by accident.
+Forcing download mode means shorting the **TP1** test pad to ground at
+reset. The V2.0 has no button on GPIO 0 and relies on the USB serial chip's
+auto-reset instead, so there is no button to hold there either; if
+auto-reset is not working, it is a cable or port problem rather than a
+timing one.
 
 ## Testing
 

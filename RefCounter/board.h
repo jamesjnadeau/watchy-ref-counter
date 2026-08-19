@@ -29,11 +29,12 @@
 
 // V1.0, V1.5 and V3 are no longer supported. The two V1 revisions put the up
 // button and the battery tap on other pins than V2.0's -- 32/33 on V1.0 and
-// 32/35 on V1.5, against 35/34 here -- and V3 is an ESP32-S3, which has no
-// GPIO 26 or 35 to build the V2.0 map on at all. Quietly falling through to
-// that map would read the battery off the wrong pin and never see the up
-// button, so a stale build flag, an old #define left in this file, or simply
-// picking an S3 board stops the build instead.
+// 32/35 on V1.5, against 35/34 here -- and V3 is an ESP32-S3, a different pin
+// map entirely, so the V2.0 numbers mean nothing on it (GPIO 26 is already
+// tied up by the SPI flash on S3 modules). Quietly falling through to that
+// map would read the battery off the wrong pin and never see the up button,
+// so a stale build flag, an old #define left in this file, or simply picking
+// an S3 board stops the build instead.
 #if defined(ARDUINO_WATCHY_V10) || defined(ARDUINO_WATCHY_V15) ||              \
     defined(ARDUINO_ESP32S3_DEV)
 #error "Watchy V1.0, V1.5 and V3 are no longer supported; build watchy_v2 or watchy_c6"
