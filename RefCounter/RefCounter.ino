@@ -25,6 +25,7 @@
 #include "RefMenu.h"
 #include "RefClock.h"
 #include "RefSport.h"
+#include "RefSyncSchedule.h"
 #include "board.h"
 #include "settings.h"
 
@@ -54,10 +55,6 @@ static uint8_t  clockHour   = 0;
 static uint8_t  clockMinute = 0;
 static bool     clockValid  = false;
 static uint32_t clockReadAt = 0;
-
-// When the watch last did anything, used to hold off the automatic NTP sync
-// until it has been sitting untouched.
-static uint32_t lastActivityAt = 0;
 
 static View currentView() {
   View v;
@@ -89,9 +86,9 @@ static bool refreshClock() {
 }
 
 static void enterIdle(bool full) {
-  state          = STATE_IDLE;
-  tidyPending    = false;
-  lastActivityAt = millis();
+  state       = STATE_IDLE;
+  tidyPending = false;
+  refClock.noteActivity();
   RefDisplay::render(currentView(), full);
 }
 
@@ -101,9 +98,9 @@ static void startTimer(uint16_t seconds) {
   startUs     = esp_timer_get_time();
   durationSec = seconds;
   shownSec    = seconds;
-  state          = STATE_RUNNING;
-  tidyPending    = false;
-  lastActivityAt = millis();
+  state       = STATE_RUNNING;
+  tidyPending = false;
+  refClock.noteActivity();
 
   Buzzer::pulse(BUZZ_CONFIRM_MS);
   RefDisplay::render(currentView(), false);
@@ -197,6 +194,18 @@ static void deepSleepUntilButton() {
   // everything first so ext1 is the only way back up.
   esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
   esp_sleep_enable_ext1_wakeup(BIT64(BTN_SLEEP_PIN), BTN_EXT1_WAKE_MODE);
+
+  // Also arm a timer wake against the resync schedule, so the watch can pull
+  // itself out of deep sleep to correct RTC drift rather than waiting for the
+  // next button press, which might be hours past due. setup() recognises this
+  // wake cause and syncs quietly before going straight back to sleep.
+  const uint32_t untilSync = refClock.secondsUntilSyncDue();
+  if (untilSync != RefSyncSchedule::NEVER) {
+    // Clamp: an already-due sync would otherwise ask for a zero length timer.
+    const uint32_t secs = untilSync < 60 ? 60 : untilSync;
+    esp_sleep_enable_timer_wakeup((uint64_t)secs * 1000000ULL);
+  }
+
   esp_deep_sleep_start();
 }
 
@@ -204,6 +213,10 @@ static void enterSleep() {
   Buzzer::off();
   state = STATE_SLEEPING;
 
+  // The hold that triggered sleep already counted as activity, but sleep
+  // entry gets its own stamp too, since it is the moment the watch actually
+  // goes quiet and the resync schedule should count its wait from.
+  refClock.noteActivity();
   RefDisplay::renderSleeping();
   RefDisplay::hibernate();
 
@@ -256,7 +269,7 @@ static void idleTick() {
     return;
   }
   if (busy) {
-    lastActivityAt = millis();
+    refClock.noteActivity();
     delay(BUTTON_POLL_MS);
     return;
   }
@@ -265,12 +278,12 @@ static void idleTick() {
     RefDisplay::renderHeader(currentView());
   }
 
-  // Correct RTC drift, but only once the watch has been left alone: bringing
-  // the radio up blocks for several seconds.
-  if ((millis() - lastActivityAt) >= AUTO_SYNC_IDLE_MS && refClock.syncDue()) {
+  // Correct RTC drift, but only once the watch has been left alone for hours:
+  // bringing the radio up blocks for several seconds.
+  if (refClock.syncDue()) {
     refClock.connectAndSync();
-    lastActivityAt = millis();
-    clockValid     = false; // force a re-read at the new time
+    refClock.noteActivity();
+    clockValid = false; // force a re-read at the new time
     if (refreshClock()) {
       RefDisplay::renderHeader(currentView());
     }
@@ -287,8 +300,30 @@ void setup() {
   Buzzer::begin();
   Buttons::begin();
   RefSport::begin();
-  RefDisplay::begin();
-  refClock.begin(esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_UNDEFINED);
+
+  // A timer wake means deepSleepUntilButton() pulled the watch out of deep
+  // sleep on its own, purely to resync the RTC. The SLEEPING screen is still
+  // sitting on the panel from before, so this path must not touch the
+  // display at all -- bringing it up would flash the panel awake for a
+  // moment nobody asked to see.
+  const esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
+  const bool resyncWake = (cause == ESP_SLEEP_WAKEUP_TIMER);
+  if (!resyncWake) {
+    RefDisplay::begin();
+  }
+  refClock.begin(cause == ESP_SLEEP_WAKEUP_UNDEFINED);
+
+  if (resyncWake) {
+    refClock.connectAndSync();
+    if (!Buttons::anyDown()) {
+      deepSleepUntilButton(); // never returns
+    }
+    // The sleep button came down while the sync was under way. Rather than
+    // trying to queue that press, fall through into a normal start; the
+    // watch simply wakes up instead of going back to sleep.
+    RefDisplay::begin();
+  }
+
   refreshClock();
 
   // Full refresh on the way in, whether this is a cold boot or a wake from

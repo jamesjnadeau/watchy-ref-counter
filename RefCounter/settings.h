@@ -128,11 +128,6 @@ static const uint16_t WIFI_AP_TIMEOUT_S  = 120;
 static const uint32_t NTP_RESYNC_HOURS = 3;
 static const uint32_t NTP_MIN_SYNC_INTERVAL_HOURS = 24;
 
-// An automatic sync blocks for several seconds while the radio comes up, so it
-// only runs after the watch has sat untouched this long. It never runs while a
-// clock is counting.
-static const uint32_t AUTO_SYNC_IDLE_MS = 60000;
-
 // Leave the menu and return to the ready screen after this long with no button
 // presses, so a menu opened by accident cannot strand you mid-game.
 static const uint32_t MENU_TIMEOUT_MS = 15000;

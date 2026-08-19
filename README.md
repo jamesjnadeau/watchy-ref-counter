@@ -269,18 +269,24 @@ settings change with no clock write and no drift, and it means an NTP sync
 needs no offset applied to it.
 
 Drift is handled two ways. **Set Time** sets it by hand, in local time.
-**Sync NTP** sets it from the internet, on demand from the menu. It can also
-run automatically every `NTP_RESYNC_HOURS` once WiFi credentials have been
-saved — but the shipped default is 0, which means never automatically at
-all. That is deliberate: the author would rather sync by hand than have an
-automatic one land in the middle of a game. Set it to a nonzero value and
-reflash to turn automatic resync on. A PCF8563 drifts roughly a minute a
-month, so even a daily sync keeps that under a second. The DS3231 in V1.0 is
-temperature compensated and drifts far less.
+**Sync NTP** sets it from the internet, on demand from the menu. It also runs
+itself automatically once WiFi credentials have been saved, on a schedule
+that needs both of these to be true: the watch has sat untouched — no button
+press, no sleep entry — for `NTP_RESYNC_HOURS` (3 by default), and at least
+`NTP_MIN_SYNC_INTERVAL_HOURS` (24) have passed since the last attempt, so a
+run of idle moments in a row cannot trigger back-to-back radio activity.
+Sleep entry counts as activity in its own right, so putting the watch away
+resets the quiet clock rather than letting it tick through the night. Set
+`NTP_RESYNC_HOURS` to 0 to only ever sync by hand. A PCF8563 drifts roughly a
+minute a month, so even a daily sync keeps that under a second. The DS3231 in
+V1.0 is temperature compensated and drifts far less.
 
-An automatic sync blocks for several seconds while the radio comes up, so
-when enabled it is held off until the watch has been left untouched for
-`AUTO_SYNC_IDLE_MS` (60s), and it never runs while a clock is counting.
+An automatic sync blocks for several seconds while the radio comes up, which
+is why it waits for quiet rather than firing the moment nobody is looking.
+That holds even in low power mode: the watch arms a deep-sleep timer against
+the same schedule, wakes itself when a sync falls due, syncs, and goes
+straight back to sleep — the SLEEPING screen already on the panel is never
+touched. It never runs while a clock is counting.
 
 The header clock is repainted on its own partial window when the minute rolls
 over, so keeping it live costs one ~400ms refresh a minute rather than a whole
@@ -412,7 +418,8 @@ static const bool     DARK_MODE           = true;  // true = white on black
 static const bool     CLOCK_24_HOUR       = false;
 static const char     DEFAULT_TIME_ZONE[] = "Eastern"; // until set in the menu
 static const bool     DEFAULT_DST_AUTO    = true; // apply the US rule by date
-static const uint32_t NTP_RESYNC_HOURS    = 0;    // 0 = only sync by hand
+static const uint32_t NTP_RESYNC_HOURS    = 3;  // 0 = only sync by hand
+static const uint32_t NTP_MIN_SYNC_INTERVAL_HOURS = 24; // floor since last try
 ```
 
 `DEFAULT_SPORT` and the five `CUSTOM_*` values are likewise only a starting
