@@ -278,8 +278,7 @@ because 02:30 never happens.
 ## Timekeeping
 
 The time comes from the watch's RTC chip, which `RefRtc` probes for at boot —
-DS3231 at 0x68 on V1.0, PCF8563 at 0x51 on V1.5 and V2, and on V3 the
-ESP32-S3's own 32kHz-backed clock. It keeps running through low power mode and
+a PCF8563 at 0x51 on the V2.0. It keeps running through low power mode and
 through a reflash, so the watch only needs setting once. The About screen
 reports which one was found.
 
@@ -298,8 +297,13 @@ run of idle moments in a row cannot trigger back-to-back radio activity.
 Sleep entry counts as activity in its own right, so putting the watch away
 resets the quiet clock rather than letting it tick through the night. Set
 `NTP_RESYNC_HOURS` to 0 to only ever sync by hand. A PCF8563 drifts roughly a
-minute a month, so even a daily sync keeps that under a second. The DS3231 in
-V1.0 is temperature compensated and drifts far less.
+minute a month, so even a daily sync keeps that under a second.
+
+**The C6 board has no RTC driver yet.** Its RV-3028-C7 sits at 0x52 and
+`RefRtc` does not know that address, so a C6 build finds no clock, the About
+screen reports `RTC: none`, and the time survives only as long as the SoC has
+power. Setting the time by hand or over NTP still works for that session. This
+is a gap in the firmware, not in the board.
 
 An automatic sync blocks for several seconds while the radio comes up, which
 is why it waits for quiet rather than firing the moment nobody is looking.
@@ -371,7 +375,7 @@ catches up as soon as the clock stops.
 ```
 watchy-ref-counter/
 ├── README.md          this file
-├── platformio.ini     build config; one env per Watchy revision
+├── platformio.ini     build config; one env per supported board (V2.0, C6)
 └── RefCounter/        the sketch (also a valid Arduino IDE sketch folder)
     ├── RefCounter.ino main loop and the IDLE/RUNNING/EXPIRED/SLEEPING states
     ├── settings.h     every tunable number, and nothing else
@@ -380,10 +384,8 @@ watchy-ref-counter/
     ├── Buzzer.h/.cpp  vibration motor
     ├── RefPanel.h/.cpp    the GxEPD2 panel instance and its pins
     ├── RefDisplay.h/.cpp  screen layout and e-paper refresh strategy
-    ├── RefRtc.h/.cpp      DS3231 / PCF8563 / ESP32-S3 clock, over I2C
-    ├── RefClock.h/.cpp    timekeeping, both syncs, battery, board revision
-    ├── RefCtsTime.h/.cpp   the Bluetooth time payloads, host-tested
-    ├── RefBleTime.h/.cpp   the BLE peripheral a phone writes the time to
+    ├── RefRtc.h/.cpp      the PCF8563 clock, over I2C
+    ├── RefClock.h/.cpp    timekeeping, NTP sync, battery
     ├── RefZone.h/.cpp     US time zones and the daylight saving rule
     ├── RefSegments.h/.cpp  where the countdown digits land, host-tested
     ├── RefSport.h/.cpp     sport presets and the custom slot
@@ -407,10 +409,9 @@ ESP32 Arduino core, and the Current Time Service is a handful of bytes this
 project encodes itself, in `RefCtsTime.cpp`.
 
 Everything else is either this project's own or comes with the ESP32 Arduino
-core. Notably there is **no RTC library**: the DS3231 and PCF8563 are a handful
-of BCD registers each, and talking to them directly avoids two dependencies
-that both caused trouble — one whose `master` no longer compiles against a
-current core, and one that `#define`s `i2cRead` and `i2cWrite` as bare macros.
+core. Notably there is **no RTC library**: the PCF8563 is a handful of BCD
+registers, and talking to it directly avoids a dependency that caused trouble
+— one whose `master` no longer compiles against a current core.
 
 The folder is named `RefCounter/` so it satisfies the Arduino IDE's rule that a
 sketch folder match its `.ino`, while `platformio.ini` points `src_dir` at the
@@ -539,24 +540,32 @@ swap the four role defines at the bottom of
 
 ## Installing
 
+This firmware supports two boards: the **Watchy V2.0** (ESP32) and **this
+repo's own ESP32-C6-MINI-1 design** in [`board-files/`](board-files/). V1.0,
+V1.5 and V3 were dropped — the V1 revisions put the up button and the battery
+tap on other pins, V1.0 carries a different RTC chip entirely, and V3's ESP32-S3
+target has been superseded by the C6 board. `board.h` stops the build if any of
+their revision flags is set, rather than flashing a pin map built for other
+hardware.
+
 ### Option A — PlatformIO (recommended)
 
 Requires [PlatformIO Core](https://platformio.org/install/cli) or the VS Code
 extension.
 
 Nothing to check out first — the three libraries are pulled from the registry
-on the first build. Plug the watch in, then build and flash. Pick the env for your revision —
-`watchy_v2` (the default), `watchy_v15`, `watchy_v10`, or `watchy_v3`:
+on the first build. Plug the watch in, then build and flash. Pick the env for
+your board — `watchy_v2` (the default) or `watchy_c6`:
 
 ```bash
 pio run -e watchy_v2 -t upload
 ```
 
-There is a fifth env, `watchy_c6`, for this repo's own board design in
-[`board-files/`](board-files/) — an ESP32-C6-MINI-1 with an RV-3028-C7. That
-board has never been fabricated, and the env pulls a different PlatformIO
-platform (the pioarduino fork) because the official one has no ESP32-C6
-support. Ignore it unless you are working on the hardware.
+`watchy_c6` pulls a different PlatformIO platform — the pioarduino fork —
+because the official `espressif32` tops out at Arduino-ESP32 2.0.17, which has
+no ESP32-C6 support at all. Note that the board has never been fabricated and
+its RV-3028-C7 has no driver in this firmware yet, so a C6 build cannot keep
+time across a power cut.
 
 The first build downloads about 1.5GB of ESP32 toolchain and takes a few
 minutes; later builds take under a minute.
@@ -572,21 +581,20 @@ minutes; later builds take under a minute.
    prompts. Do *not* install the Watchy library; this sketch does not use it.
 
 3. **Board target.** *Tools → Board → ESP32 Arduino* → **ESP32 Dev Module**
-   for V1.0/V1.5/V2, or **ESP32S3 Dev Module** for V3. The pin map is this
-   project's own, so the board only has to be the right chip.
+   for the V2.0. The pin map is this project's own, so the board only has to
+   be the right chip. (The C6 board is PlatformIO-only here; the IDE's ESP32-C6
+   support depends on a 3.x core that this project does not otherwise require.)
 
-   Then set the revision, because the up button and the battery tap moved
-   between them. The IDE has no build-flag field, so uncomment the matching
+   Then set the revision. The IDE has no build-flag field, so uncomment this
    line near the top of [`RefCounter/board.h`](RefCounter/board.h) — it has to
    go in that header, which every source file includes, not in the `.ino`,
    which would only set it for itself:
 
    ```c
-   // #define ARDUINO_WATCHY_V20   // or _V15, or _V10
+   // #define ARDUINO_WATCHY_V20
    ```
 
-   V3 needs nothing: selecting an S3 board defines `ARDUINO_ESP32S3_DEV` for
-   you. Under PlatformIO this is handled by `build_flags` and no edit is needed.
+   Under PlatformIO this is handled by `build_flags` and no edit is needed.
 
    Also set *Tools → Partition Scheme* to **Huge APP**, or the WiFi and
    Bluetooth stacks will not fit.
@@ -599,9 +607,9 @@ minutes; later builds take under a minute.
 The watch must be awake to enumerate over USB. If it is in low power mode, hold
 the top-left button to wake it first.
 
-On a **V3**, hold the **top-right (UP)** button while plugging in to force the
-bootloader — on that revision UP is GPIO 0, the ESP32-S3 strapping pin. The
-ESP32 revisions have no button on GPIO 0 and rely on the USB serial chip's
+On the **C6 board**, hold the **bottom-left (MENU)** button while plugging in
+to force the bootloader — there MENU is GPIO 0, the ESP32-C6 strapping pin.
+The V2.0 has no button on GPIO 0 and relies on the USB serial chip's
 auto-reset instead, so there is no button to hold; if auto-reset is not
 working, it is a cable or port problem rather than a timing one.
 
@@ -677,10 +685,16 @@ crept back in.
 Nothing else here has automated tests, and none of this has run on hardware —
 see below.
 
+`tests/board_test.cpp` and `tests/board_c6_test.cpp` add a second kind of
+check: they assert the V2.0 and C6 pin maps and each board's `BOARD_NAME`,
+which until now nothing did for the C6 at all. `tests/run.sh` then compiles
+`board.h` three more times, once per retired revision flag, to confirm each is
+rejected rather than quietly building the V2.0 map.
+
 ## Known limitations
 
-- **None of this has been run on a watch.** It builds clean for all four
-  revisions and the time zone, digit-layout and sport-preset logic are tested
+- **None of this has been run on a watch.** It builds clean for both supported
+  boards and the time zone, digit-layout and sport-preset logic are tested
   on a host, but no part of it has been exercised on real hardware. The least
   proven pieces are `RefRtc`'s BCD decoding and chip probing,
   `RefPanel::begin()` (GxEPD2's stock init rather than the reference
