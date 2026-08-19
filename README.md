@@ -389,8 +389,9 @@ Either way the 2.6s stall never lands mid-down.
 **Power.** The CPU drops to 80MHz, and the watch light-sleeps between button
 polls whenever no clock is running, waking on a button GPIO with a 250ms timer
 as a backstop. Low power mode is a real deep sleep with an `ext1` wake on the
-top-left button. Set `LIGHT_SLEEP_WHEN_IDLE` to `false` in `settings.h` to fall
-back to plain polling if your board misbehaves.
+top-left button, plus a timer wake armed against the NTP resync schedule so
+the watch can correct its clock unattended. Set `LIGHT_SLEEP_WHEN_IDLE` to
+`false` in `settings.h` to fall back to plain polling if your board misbehaves.
 
 **Accuracy.** The countdown is derived from `esp_timer_get_time()` against the
 main crystal. Light sleep during e-paper busy-waits is accounted for using the

@@ -19,8 +19,9 @@ static const uint32_t NEVER = 0xFFFFFFFFUL;
 // Seconds until the next automatic sync falls due, given the current UTC
 // epoch, the epoch of the last button press or sleep entry, and the epoch of
 // the last sync attempt. 0 means due now; NEVER means nothing to schedule.
-uint32_t secondsUntilDue(time_t now, time_t lastActivity, time_t lastSyncAttempt,
-                          uint32_t quietHours, uint32_t minIntervalHours);
+uint32_t secondsUntilDue(time_t now, time_t lastActivity,
+                         time_t lastSyncAttempt, uint32_t quietHours,
+                         uint32_t minIntervalHours);
 
 } // namespace RefSyncSchedule
 

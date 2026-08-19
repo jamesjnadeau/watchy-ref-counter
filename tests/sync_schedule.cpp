@@ -34,6 +34,12 @@ int main() {
   expectEq("pressed 2h ago, never synced: 1h left",
            secondsUntilDue(NOW, NOW - 2 * 3600, 0, 3, 24), 3600);
 
+  // Never pressed and never synced, on a clock that has since been set: this
+  // is what a cold boot leaves behind, and it needs no special case. Both
+  // anchors sit at the epoch, so both windows closed decades ago.
+  expectEq("both anchors zero, clock set: due now",
+           secondsUntilDue(NOW, 0, 0, 3, 24), 0);
+
   // Pressed 3h ago exactly: boundary is inclusive.
   expectEq("pressed 3h ago exactly: due now",
            secondsUntilDue(NOW, NOW - 3 * 3600, 0, 3, 24), 0);

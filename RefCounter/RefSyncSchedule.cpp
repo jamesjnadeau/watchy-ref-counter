@@ -1,9 +1,19 @@
+// The due-time arithmetic. See RefSyncSchedule.h for why it lives apart from
+// RefClock.
+//
+// One caveat the host test cannot catch: time_t is 64-bit on a desktop but
+// 32-bit on the ESP32, so tests/sync_schedule.cpp exercises a far wider type
+// than the watch ever runs. There is ample headroom at the shipped hours --
+// an anchor is a present-day epoch and the additions are days at most -- but
+// anyone raising them by orders of magnitude should reason about the 2038
+// ceiling rather than trust a green host suite.
 #include "RefSyncSchedule.h"
 
 namespace RefSyncSchedule {
 
-uint32_t secondsUntilDue(time_t now, time_t lastActivity, time_t lastSyncAttempt,
-                          uint32_t quietHours, uint32_t minIntervalHours) {
+uint32_t secondsUntilDue(time_t now, time_t lastActivity,
+                         time_t lastSyncAttempt, uint32_t quietHours,
+                         uint32_t minIntervalHours) {
   if (quietHours == 0) {
     return NEVER; // Automatic sync is off; the floor is irrelevant.
   }

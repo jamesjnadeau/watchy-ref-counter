@@ -26,6 +26,16 @@ RTC_DATA_ATTR time_t lastActivity    = 0;
 // RTC every time syncDue() is polled.
 bool unsetSyncTried = false;
 
+// Shared by syncDue() and secondsUntilSyncDue() so that one RTC read serves
+// both. Reading the chip costs two I2C transactions and a struct tm round
+// trip, and the idle loop asks whether a sync is due several times a second,
+// so the second read is worth avoiding.
+uint32_t secondsUntilDueAt(time_t now) {
+  return RefSyncSchedule::secondsUntilDue(now, lastActivity, lastSyncAttempt,
+                                          NTP_RESYNC_HOURS,
+                                          NTP_MIN_SYNC_INTERVAL_HOURS);
+}
+
 } // namespace
 
 void RefClock::begin(bool coldBoot) {
@@ -141,13 +151,24 @@ bool RefClock::connectAndSync() {
   return ok;
 }
 
-void RefClock::noteActivity() { lastActivity = _rtc.epoch(); }
+void RefClock::noteActivity() {
+  // A failed RTC read comes back as 0, and to the schedule a 0 anchor is not
+  // a missing one -- it is an activity stamp from 1970, which any quiet
+  // period is long past. Letting one glitched read through would therefore
+  // make a sync fall due at once, radio and all, in the middle of a game, so
+  // an unreadable clock leaves the last good stamp where it is.
+  const time_t t = _rtc.epoch();
+  if (t != 0) {
+    lastActivity = t;
+  }
+}
 
 bool RefClock::syncDue() {
   if (NTP_RESYNC_HOURS == 0) {
     return false;
   }
-  if (_rtc.epoch() == 0) {
+  const time_t now = _rtc.epoch();
+  if (now == 0) {
     // An unset RTC has no NTP source but WiFi, so this is the only way it
     // ever gets a time. Try once per wake cycle rather than every time the
     // sketch happens to poll, since a WiFi-less watch would otherwise spin.
@@ -157,13 +178,11 @@ bool RefClock::syncDue() {
     unsetSyncTried = true;
     return true;
   }
-  return secondsUntilSyncDue() == 0;
+  return secondsUntilDueAt(now) == 0;
 }
 
 uint32_t RefClock::secondsUntilSyncDue() {
-  return RefSyncSchedule::secondsUntilDue(_rtc.epoch(), lastActivity,
-                                           lastSyncAttempt, NTP_RESYNC_HOURS,
-                                           NTP_MIN_SYNC_INTERVAL_HOURS);
+  return secondsUntilDueAt(_rtc.epoch());
 }
 
 float RefClock::batteryVolts() {

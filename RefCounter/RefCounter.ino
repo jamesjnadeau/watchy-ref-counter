@@ -315,6 +315,12 @@ void setup() {
 
   if (resyncWake) {
     refClock.connectAndSync();
+    // Re-anchor the quiet period, exactly as the awake path does after its
+    // own sync. Otherwise the schedule still reads as due the moment this
+    // wake ends, and with NTP_MIN_SYNC_INTERVAL_HOURS set to 0 the watch
+    // would wake, sync and re-sleep on the timer's one minute floor until the
+    // battery was flat. Stamping after the sync cannot suppress that sync.
+    refClock.noteActivity();
     // anyDown() reads debounced state from the last poll(), which is still
     // whatever it was before the multi-second sync ran. Poll once now so a
     // press held throughout the sync is actually seen: poll() debounces off
@@ -324,6 +330,13 @@ void setup() {
     if (!Buttons::anyDown()) {
       deepSleepUntilButton(); // never returns
     }
+    // That same edge timestamp now has to be thrown away. The press was
+    // measured from its real moment of contact, seconds back inside the sync,
+    // so the main loop would see a hold that had long since passed its
+    // threshold and act on it at once -- putting the watch straight back to
+    // sleep, or starting a clock nobody asked for. Re-seed the debounce state
+    // instead, as RefMenu does after reading the pins behind Buttons' back.
+    Buttons::resync();
     // The sleep button is down now that the sync has finished. Rather than
     // trying to queue that press, fall through into a normal start; the
     // watch simply wakes up instead of going back to sleep.
