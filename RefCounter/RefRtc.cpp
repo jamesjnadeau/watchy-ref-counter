@@ -7,7 +7,6 @@
 
 namespace {
 
-const uint8_t ADDR_DS3231  = 0x68;
 const uint8_t ADDR_PCF8563 = 0x51;
 
 uint8_t fromBcd(uint8_t v) { return (uint8_t)((v >> 4) * 10 + (v & 0x0F)); }
@@ -60,13 +59,7 @@ void RefRtc::begin() {
   // 32kHz crystal.
   _kind = INTERNAL;
 #else
-  if (present(ADDR_DS3231)) {
-    _kind = DS3231;
-    // Square wave off, so the pin does not sit there toggling and drawing
-    // current. Control register 0x0E, INTCN set, both alarms masked off.
-    const uint8_t control = 0x04;
-    writeRegisters(ADDR_DS3231, 0x0E, &control, 1);
-  } else if (present(ADDR_PCF8563)) {
+  if (present(ADDR_PCF8563)) {
     _kind = PCF8563;
     // Control 1 and 2 cleared: run normally, no alarm or timer interrupts.
     const uint8_t control[2] = {0x00, 0x00};
@@ -75,22 +68,6 @@ void RefRtc::begin() {
     _kind = NONE;
   }
 #endif
-}
-
-// DS3231 registers 0x00..0x06: seconds, minutes, hours, weekday, date, month
-// (bit 7 is the century flag), year.
-bool RefRtc::readDS3231(struct tm &out) {
-  uint8_t r[7];
-  if (!readRegisters(ADDR_DS3231, 0x00, r, 7)) {
-    return false;
-  }
-  out.tm_sec  = fromBcd(r[0] & 0x7F);
-  out.tm_min  = fromBcd(r[1] & 0x7F);
-  out.tm_hour = fromBcd(r[2] & 0x3F); // forced to 24 hour mode on write
-  out.tm_mday = fromBcd(r[4] & 0x3F);
-  out.tm_mon  = fromBcd(r[5] & 0x1F) - 1;
-  out.tm_year = fromBcd(r[6]) + 100; // years since 1900, chip holds 00..99
-  return true;
 }
 
 // PCF8563 registers 0x02..0x08: seconds (bit 7 is the low voltage flag),
@@ -115,9 +92,6 @@ bool RefRtc::readPCF8563(struct tm &out) {
 bool RefRtc::read(struct tm &out) {
   bool ok = false;
   switch (_kind) {
-  case DS3231:
-    ok = readDS3231(out);
-    break;
   case PCF8563:
     ok = readPCF8563(out);
     break;
@@ -155,15 +129,6 @@ bool RefRtc::set(const struct tm &in) {
   settimeofday(&tv, nullptr);
 
   switch (_kind) {
-  case DS3231: {
-    const uint8_t r[7] = {
-        toBcd((uint8_t)t.tm_sec),        toBcd((uint8_t)t.tm_min),
-        toBcd((uint8_t)t.tm_hour),       // bit 6 clear selects 24 hour mode
-        (uint8_t)(t.tm_wday + 1),        toBcd((uint8_t)t.tm_mday),
-        toBcd((uint8_t)(t.tm_mon + 1)),  toBcd((uint8_t)(t.tm_year % 100)),
-    };
-    return writeRegisters(ADDR_DS3231, 0x00, r, 7);
-  }
   case PCF8563: {
     const uint8_t r[7] = {
         toBcd((uint8_t)t.tm_sec), // writing clears the low voltage flag

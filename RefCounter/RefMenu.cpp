@@ -213,7 +213,6 @@ void showAbout(RefClock &refClock) {
 
   const char *rtcName = "none";
   switch (refClock.rtc().kind()) {
-  case RefRtc::DS3231:   rtcName = "DS3231"; break;
   case RefRtc::PCF8563:  rtcName = "PCF8563"; break;
   case RefRtc::INTERNAL: rtcName = "internal"; break;
   default: break;

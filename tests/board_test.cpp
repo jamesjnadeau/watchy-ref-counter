@@ -27,7 +27,16 @@ static_assert(PIN_VIB_MOTOR == 13, "V2.0 vibration motor is GPIO 13");
 static_assert(BTN_PRESSED_LEVEL == HIGH,
               "the ESP32 board reads high when a button is pressed");
 
+// The RTC kinds this firmware still knows about. DS3231 sat between NONE and
+// PCF8563 and was fitted only to V1.0, so these values are what its removal
+// leaves behind -- and asserting on them is the cheapest way to notice if it
+// ever creeps back.
+#include "RefRtc.h"
+
+static_assert(RefRtc::NONE == 0, "no clock found");
+static_assert(RefRtc::PCF8563 == 1, "V2.0's chip; the DS3231 slot is gone");
+
 int main() {
-  printf("board: V2.0 pin map ok\n");
+  printf("board: V2.0 pin map and RTC kinds ok\n");
   return 0;
 }

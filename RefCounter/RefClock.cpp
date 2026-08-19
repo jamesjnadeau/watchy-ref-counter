@@ -291,22 +291,9 @@ uint8_t RefClock::boardRevision() {
   if (info.model != CHIP_ESP32) {
     return 30; // an S3 here means V3
   }
-  // V1.0 shipped a DS3231; V1.5 and V2.0 a PCF8563. The two of those are told
-  // apart by which pin the battery divider lands on, which is a build-time
-  // choice, so fall back to that.
-  switch (_rtc.kind()) {
-  case RefRtc::DS3231:
-    return 10;
-#if defined(ARDUINO_WATCHY_V15)
-  case RefRtc::PCF8563:
-    return 15;
-#else
-  case RefRtc::PCF8563:
-    return 20;
-#endif
-  default:
-    return 0;
-  }
+  // V2.0 ships a PCF8563. Finding nothing means the chip did not answer,
+  // which is worth reporting as unknown rather than guessing a revision.
+  return _rtc.kind() == RefRtc::PCF8563 ? 20 : 0;
 }
 
 time_t RefClock::bootEpoch() const { return bootedAt; }
