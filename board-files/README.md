@@ -78,7 +78,7 @@ compiler can see:
 | pin map | any GPIO that drifted from the spec's table |
 | deep-sleep wake pins | a button or `RTC_INT` on a pin above IO21, which cannot wake `ext1` |
 | battery ADC on ADC1 | the battery tap landing on ADC2, which is dead while WiFi is on |
-| strapping pins | anything but the GPIO0 test pad touching IO0/IO3/IO45/IO46 |
+| strapping pins | anything but the `TP_BOOT` test pad touching IO9 |
 | USB-C CC pulldowns | a missing or shared 5.1k, and D+/D- halves left untied |
 | RV-3028-C7 wiring | `VDD` off `+BATT`, or `VBACKUP` fed from a rail |
 | bus pull-ups | I2C or `RTC_INT` pulled to `+BATT`, putting 4.2V on C6 inputs |
@@ -333,7 +333,7 @@ Five of the seven are at the display connector `J1` or the module pins feeding
 it, which is the densest corner of the board. The lever there is not the FPC
 pinout — that is fixed by the panel — but the *module* side: `EPD_SCK`,
 `EPD_MOSI`, `EPD_CS`, `EPD_DC`, `EPD_RST` and `EPD_BUSY` are assigned to
-`IO47`, `IO48`, `IO33`, `IO34`, `IO35` and `IO36` in `elec/src/watchy.ato`,
+`IO15`, `IO14`, `IO8`, `IO18`, `IO19` and `IO20` in `elec/src/watchy.ato`,
 and those are general-purpose pins. Re-ordering them so the fan-out crosses
 itself less is a change to the source, which is where this design's decisions
 are supposed to live, and it is the one move the router cannot make for

@@ -6,7 +6,8 @@ Reads the KiCad netlist atopile writes to build/default.net and checks:
   * the pin map, verbatim from the spec
   * that everything on the ext1 wake mask sits on an RTC GPIO
   * that the battery tap sits on ADC1
-  * that no signal but the documented GPIO0 test pad touches a strapping pin
+  * that no signal but the documented `TP_BOOT` test pad touches IO9, the
+    boot strapping pin
   * that each USB-C CC pin has its own 5.1k pulldown, and that both halves of
     D+ and of D- are tied
   * the RV-3028-C7's supply arrangement

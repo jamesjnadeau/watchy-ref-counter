@@ -217,7 +217,9 @@ module WatchyRefS3:
     c1.1 ~ EN
     c1.2 ~ GND
 
-    # GPIO0 pull-up. Short TP1 to ground at reset to force download mode.
+    # IO9 pull-up. IO9 is the C6's boot strapping pin: it must be high when
+    # reset is released or the chip comes up in download mode. Short TP1 to
+    # ground at reset to force download mode by hand.
     r23 = new R_10k
     r23.designator = "R23"
     r23.1 ~ P3V3
@@ -573,10 +575,13 @@ module WatchyRefS3:
     # =====================================================================
     # Test points
     # =====================================================================
-    # There is no UART console. The S3's USB Serial/JTAG controller carries
+    # There is no UART console. The C6's USB Serial/JTAG controller carries
     # the console, flashing and automatic download mode on USB_DP/USB_DM, and
-    # TP1 (GPIO0) forces download mode by hand if firmware ever misconfigures
-    # USB. The cost of that choice is that the USB controller powers down in
+    # TP1 (IO9, the strapping pin) forces download mode by hand if firmware
+    # ever misconfigures USB. Note that no button sits on IO9 -- unlike the
+    # ESP32 and ESP32-S3, whose strapping pin is IO0, this design keeps the
+    # strapping pin off the buttons entirely, so shorting the pad is the only
+    # way in. The cost of the USB choice is that the controller powers down in
     # deep sleep, so nothing prints across a sleep/wake cycle.
     tp1 = new TestPoint
     tp1.designator = "TP1"
