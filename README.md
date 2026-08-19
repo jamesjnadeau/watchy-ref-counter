@@ -335,7 +335,7 @@ Three libraries, all from the registry:
 
 | Library | For |
 | --- | --- |
-| GxEPD2 | the GDEH0154D67 panel, including fast partial update |
+| GxEPD2 | the GDEY0154D67 panel, including fast partial update |
 | Adafruit GFX | fonts and primitives |
 | WiFiManager | the captive portal behind "Setup WiFi" |
 
@@ -480,6 +480,12 @@ on the first build. Plug the watch in, then build and flash. Pick the env for yo
 ```bash
 pio run -e watchy_v2 -t upload
 ```
+
+There is a fifth env, `watchy_c6`, for this repo's own board design in
+[`board-files/`](board-files/) — an ESP32-C6-MINI-1 with an RV-3028-C7. That
+board has never been fabricated, and the env pulls a different PlatformIO
+platform (the pioarduino fork) because the official one has no ESP32-C6
+support. Ignore it unless you are working on the hardware.
 
 The first build downloads about 1.5GB of ESP32 toolchain and takes a few
 minutes; later builds take under a minute.

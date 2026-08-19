@@ -1,16 +1,16 @@
-# Watchy Ref - ESP32-S3-MINI-1 / RV-3028-C7 board.
+# Watchy Ref - ESP32-C6-MINI-1 / RV-3028-C7 board.
 #
 # Derived from sqfmi/watchy-hardware v2.0 (MIT). The e-paper block, the
 # TP4054 charger, the VBUS/battery OR-ing, the LDO, the motor driver and the
 # connectors are transcribed pad-for-pad from V2's netlist; the MCU, the RTC,
 # the USB connector and the battery divider are the changes this board exists
 # to make. Rationale for each is in
-# docs/superpowers/specs/2026-08-18-s3-mini-rv3028-board.md.
+# docs/superpowers/specs/2026-08-18-c6-mini-rv3028-board.md.
 #
 # Designators are pinned to V2's for every carried-over part, so that
 # importing this netlist into V2's layout reuses the existing placement
 # instead of scattering everything at the origin. New parts take the next
-# free numbers: R21-R23, C15-C16, TP7-TP9.
+# free numbers: R21-R23, C15-C16, TP9.
 #
 # NEVER FABRICATED, NEVER POWERED, NEVER TESTED.
 
@@ -20,7 +20,7 @@ from "parts.ato" import D_MBR0530, D_1N4001, D_LED
 from "parts.ato" import Q_AO3400A, Q_CJ2301, Q_S8050
 from "parts.ato" import L_10uH, U_ME6211C33, U_TP4054
 from "parts.ato" import J_FPC24, J_Battery, M_Vibration, SW_Tactile, TestPoint
-from "mcu.ato" import ESP32S3MINI1
+from "mcu.ato" import ESP32C6MINI1
 from "rtc.ato" import RV3028C7
 from "usb.ato" import USBCReceptacle16P, USBLC6_2P6
 
@@ -64,10 +64,6 @@ module WatchyRefS3:
     EN.override_net_name = "EN"
     signal TP_BOOT
     TP_BOOT.override_net_name = "TP_BOOT"
-    signal TP_TX
-    TP_TX.override_net_name = "TP_TX"
-    signal TP_RX
-    TP_RX.override_net_name = "TP_RX"
 
     # ------------------------------------------------------------- USB nets
     signal USB_DP
@@ -132,47 +128,83 @@ module WatchyRefS3:
     PROG.override_net_name = "PROG"
 
     # =====================================================================
-    # MCU - ESP32-S3-MINI-1
+    # MCU - ESP32-C6-MINI-1
     # =====================================================================
-    # The pin map is the spec's, verbatim. Buttons and RTC_INT all sit on
-    # IO4-IO8, which are RTC GPIOs, so one ESP_EXT1_WAKEUP_ANY_LOW mask
-    # covers five wake sources. BATT_ADC is on IO9 = ADC1_CH8; ADC2 is
-    # unusable while WiFi is running. No button touches a strapping pin.
-    u1 = new ESP32S3MINI1
+    # The pin map is the spec's, verbatim. Three datasheet facts fix most of
+    # it (see mcu.ato for the citations):
+    #
+    #   IO0-IO7  are the only deep-sleep wake pins. Four buttons and RTC_INT
+    #            take five of the eight, so one ESP_EXT1_WAKEUP_ANY_LOW mask
+    #            still covers every wake source.
+    #   IO0-IO6  are the only ADC1 channels. BATT_ADC is on IO5 = ADC1_CH5.
+    #   IO9      must be high at reset or the chip boots into download mode.
+    #
+    # Those eight wake/ADC pins are all on the module's left column and the
+    # left half of its bottom row, which is why the buttons and the RTC sit
+    # there and everything else is further right.
+    u1 = new ESP32C6MINI1
     u1.designator = "U1"
 
     u1.P3V3 ~ P3V3
     u1.GND ~ GND
     u1.EN ~ EN
 
-    u1.IO4 ~ BTN_MENU
-    u1.IO5 ~ BTN_BACK
-    u1.IO6 ~ BTN_UP
-    u1.IO7 ~ BTN_DOWN
-    u1.IO8 ~ RTC_INT
-    u1.IO9 ~ BATT_ADC
-    u1.IO11 ~ SCL
-    u1.IO12 ~ SDA
-    u1.IO17 ~ VIB_PWM
-    u1.IO19 ~ USB_DM
-    u1.IO20 ~ USB_DP
-    u1.IO47 ~ EPD_SCK
-    u1.IO33 ~ EPD_CS
-    u1.IO34 ~ EPD_DC
-    u1.IO48 ~ EPD_MOSI
-    u1.IO35 ~ EPD_RST
-    u1.IO36 ~ EPD_BUSY
+    # Wake sources. IO2/IO3 are the left column beside SW3/SW4; IO0/IO1 are
+    # the first two pads of the bottom row. IO4 is MTMS and IO5 is MTDI,
+    # both latched at reset, but they only select the SDIO sampling clock
+    # edge and this design has no SDIO -- see mcu.ato.
+    u1.IO2 ~ BTN_UP         # pad 5,  left column
+    u1.IO3 ~ BTN_DOWN       # pad 6,  left column
+    u1.IO4 ~ RTC_INT        # pad 9,  left column, nearest U6
+    u1.IO0 ~ BTN_MENU       # pad 12, bottom row
+    u1.IO1 ~ BTN_BACK       # pad 13, bottom row
+    u1.IO5 ~ BATT_ADC       # pad 10, left column. ADC1_CH5.
 
-    # Strapping pin IO0 carries nothing but its pull-up and a test pad, so a
-    # held or dirty button can never drop the watch into the bootloader.
-    u1.IO0 ~ TP_BOOT
-    u1.TXD0 ~ TP_TX
-    u1.RXD0 ~ TP_RX
+    # I2C, on the two bottom-row pads closest to the RTC at (80.5, 89.6).
+    u1.IO6 ~ SCL            # pad 15
+    u1.IO7 ~ SDA            # pad 16
 
-    # IO1, IO2, IO3, IO10, IO13-IO16, IO18, IO21, IO26, IO37-IO42, IO45 and
-    # IO46 are deliberately left unconnected. IO15/IO16 are the XTAL_32K pair,
-    # unused because the RTC's alarm is the wake source (spec D5). IO3, IO45
-    # and IO46 are strapping pins with the right internal defaults.
+    # USB is not a choice: the USB Serial/JTAG controller is hard-wired to
+    # IO12/IO13, which are pads 17 and 18 -- the middle of the bottom row.
+    u1.IO12 ~ USB_DM        # pad 17
+    u1.IO13 ~ USB_DP        # pad 18
+
+    # The display bundle, and the order matters more than the numbers do.
+    # J1's pinout is fixed by the panel: reading left to right along the
+    # connector it is MOSI, SCK, CS, DC, RST, BUSY. These six take the next
+    # six live pads going clockwise round the module, in that same order, so
+    # the fan-out is planar -- six parallel tracks, no crossings.
+    #
+    # Pads 19, 20, 22 and 24 are the bottom row; 25 and 26 are the first two
+    # of the right column, which sit further right and higher, exactly where
+    # the two rightmost tracks of the fan want to start. Pad 21 is NC, so it
+    # is a gap with no copper rather than an obstacle, and pad 23 is IO9,
+    # which is spoken for below.
+    #
+    # If you must move a signal here, check first that it is not one of
+    # IO0-IO7 (the only deep-sleep wake pins) and not IO9 (strapping).
+    u1.IO14 ~ EPD_MOSI      # pad 19, leftmost  -> J1.14, leftmost
+    u1.IO15 ~ EPD_SCK       # pad 20            -> J1.13
+    u1.IO8 ~ EPD_CS         # pad 22            -> J1.12
+    u1.IO18 ~ EPD_DC        # pad 24            -> J1.11
+    u1.IO19 ~ EPD_RST       # pad 25            -> J1.10
+    u1.IO20 ~ EPD_BUSY      # pad 26, rightmost -> J1.9,  rightmost
+
+    u1.IO21 ~ VIB_PWM       # pad 27, right column
+
+    # Strapping pin IO9 carries nothing but its pull-up and a test pad, so a
+    # held or dirty button can never drop the watch into the bootloader. It
+    # is the one pin TP_BOOT could be on: Table 4-3 makes IO9 low at reset
+    # mean download boot, and every other pin is ignored. R23 pulls it up.
+    #
+    # It sits at pad 23, in the middle of the fan-out above. That costs one
+    # via to drop the net onto an inner layer and out from under the bundle;
+    # it does not cost a crossing.
+    u1.IO9 ~ TP_BOOT
+
+    # IO16, IO17, IO22 and IO23 are deliberately left unconnected.
+    # IO16/IO17 are the UART0 pads: this board has no serial console, and
+    # those two pads are where one would go back if it ever needs to.
 
     # EN reset network, carried over from V2.
     r1 = new R_10k
@@ -541,9 +573,11 @@ module WatchyRefS3:
     # =====================================================================
     # Test points
     # =====================================================================
-    # TP7 and TP8 are new. The S3's serial port only exists while firmware
-    # runs, so when firmware is wedged a USB-serial dongle on these pads plus
-    # TP5/TP6 is the only console left.
+    # There is no UART console. The S3's USB Serial/JTAG controller carries
+    # the console, flashing and automatic download mode on USB_DP/USB_DM, and
+    # TP1 (GPIO0) forces download mode by hand if firmware ever misconfigures
+    # USB. The cost of that choice is that the USB controller powers down in
+    # deep sleep, so nothing prints across a sleep/wake cycle.
     tp1 = new TestPoint
     tp1.designator = "TP1"
     tp1.1 ~ TP_BOOT
@@ -567,14 +601,6 @@ module WatchyRefS3:
     tp6 = new TestPoint
     tp6.designator = "TP6"
     tp6.1 ~ GND
-
-    tp7 = new TestPoint
-    tp7.designator = "TP7"
-    tp7.1 ~ TP_TX
-
-    tp8 = new TestPoint
-    tp8.designator = "TP8"
-    tp8.1 ~ TP_RX
 
     tp9 = new TestPoint
     tp9.designator = "TP9"

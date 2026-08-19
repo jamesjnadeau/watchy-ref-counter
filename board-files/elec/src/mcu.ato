@@ -1,76 +1,90 @@
-# ESP32-S3-MINI-1 module.
+# ESP32-C6-MINI-1 module.
 #
-# Pad numbers are from the ESP32-S3-MINI-1 datasheet Table 3-1, reproduced in
-# docs/superpowers/specs/2026-08-18-s3-mini-rv3028-board.md. 65 pads; GND is
-# 1, 2, 42, 43 and 46-65.
+# Pad numbers are from the ESP32-C6-MINI-1 datasheet v1.5 Table 3-1,
+# reproduced in docs/superpowers/specs/2026-08-18-c6-mini-rv3028-board.md.
+# 53 pads; GND is 1, 2, 11, 14 and 36-53. Pads 4, 7, 21 and 32-35 are NC and
+# are deliberately not declared here.
 #
-# Order the plain ESP32-S3-MINI-1 (embedded 8MB quad flash, no PSRAM), NOT the
-# -N4R2 variant: that one consumes IO26 for PSRAM.
+# Order ESP32-C6-MINI-1-N4 (4MB embedded quad flash) or -H8 if you want 8MB.
+# There is no PSRAM variant to get wrong, unlike the S3-MINI-1-N4R2.
+#
+# The module brings out 22 GPIO -- IO0-IO9 and IO12-IO23 -- against this
+# design's 17. The five spares are IO16, IO17, IO21, IO22 and IO23, and two
+# of those (IO16/IO17) are the UART0 pads, so the serial console this board
+# no longer carries can be soldered back on later without moving a signal.
+#
+# Three facts from the datasheet shape the pin map in watchy.ato, and none of
+# them are guessable from the pin names:
+#
+#   IO0-IO7   are the only pins that can wake the chip from deep sleep.
+#             (LP_GPIO0-7. Everything else is light-sleep only.)
+#   IO0-IO6   are the only ADC1 channels. ADC1_CH0..CH6.
+#   IO8/IO9   are the boot strapping pins. Table 4-3: SPI boot needs IO9
+#             high and does not care about IO8 at all ("Any value").
+#
+# MTMS (IO4), MTDI (IO5) and IO15 are also latched at reset, but harmlessly:
+# MTMS/MTDI only pick the SDIO sampling clock edge, which this design never
+# uses, and IO15 only selects the JTAG signal source -- and Table 4-7 says it
+# is "Ignored" unless EFUSE_JTAG_SEL_ENABLE is burnt, which it is not.
 #
 # The footprint is Espressif's own, from github.com/espressif/kicad-libraries
 # (CC-BY-SA 4.0, see vendor/). It carries an "antenna keepout" zone on *.Cu
 # that forbids tracks, vias, pads and copper pour on every layer, which is
 # what the spec's antenna risk asks for.
 
-component ESP32S3MINI1:
+component ESP32C6MINI1:
     designator_prefix = "U"
-    footprint = "footprints:ESP32-S3-MINI-1"
-    package = "ESP32-S3-MINI-1"
-    mpn = "ESP32-S3-MINI-1"
-    value = "ESP32-S3-MINI-1"
-    description = "ESP32-S3-MINI-1"
+    footprint = "footprints:ESP32-C6-MINI-1"
+    package = "ESP32-C6-MINI-1"
+    mpn = "ESP32-C6-MINI-1"
+    value = "ESP32-C6-MINI-1"
+    description = "ESP32-C6-MINI-1"
 
     # Power and control
     signal P3V3 ~ pin 3
-    signal EN ~ pin 45
+    signal EN ~ pin 8
 
-    # GPIO, named by the datasheet's IO number
-    signal IO0 ~ pin 4
-    signal IO1 ~ pin 5
-    signal IO2 ~ pin 6
-    signal IO3 ~ pin 7
-    signal IO4 ~ pin 8
-    signal IO5 ~ pin 9
-    signal IO6 ~ pin 10
-    signal IO7 ~ pin 11
-    signal IO8 ~ pin 12
-    signal IO9 ~ pin 13
-    signal IO10 ~ pin 14
-    signal IO11 ~ pin 15
-    signal IO12 ~ pin 16
-    signal IO13 ~ pin 17
-    signal IO14 ~ pin 18
-    signal IO15 ~ pin 19
-    signal IO16 ~ pin 20
-    signal IO17 ~ pin 21
-    signal IO18 ~ pin 22
-    signal IO19 ~ pin 23
-    signal IO20 ~ pin 24
-    signal IO21 ~ pin 25
-    signal IO26 ~ pin 26
-    signal IO47 ~ pin 27
-    signal IO33 ~ pin 28
-    signal IO34 ~ pin 29
-    signal IO48 ~ pin 30
-    signal IO35 ~ pin 31
-    signal IO36 ~ pin 32
-    signal IO37 ~ pin 33
-    signal IO38 ~ pin 34
-    signal IO39 ~ pin 35
-    signal IO40 ~ pin 36
-    signal IO41 ~ pin 37
-    signal IO42 ~ pin 38
-    signal TXD0 ~ pin 39
-    signal RXD0 ~ pin 40
-    signal IO45 ~ pin 41
-    signal IO46 ~ pin 44
+    # GPIO, named by the datasheet's IO number. Left column first (pads
+    # 5-10), then the bottom row (12-24), then the right column (25-31).
+    signal IO2 ~ pin 5
+    signal IO3 ~ pin 6
+    signal IO4 ~ pin 9
+    signal IO5 ~ pin 10
+    signal IO0 ~ pin 12
+    signal IO1 ~ pin 13
+    signal IO6 ~ pin 15
+    signal IO7 ~ pin 16
+    signal IO12 ~ pin 17
+    signal IO13 ~ pin 18
+    signal IO14 ~ pin 19
+    signal IO15 ~ pin 20
+    signal IO8 ~ pin 22
+    signal IO9 ~ pin 23
+    signal IO18 ~ pin 24
+    signal IO19 ~ pin 25
+    signal IO20 ~ pin 26
+    signal IO21 ~ pin 27
+    signal IO22 ~ pin 28
+    signal IO23 ~ pin 29
+    signal IO17 ~ pin 30
+    signal IO16 ~ pin 31
 
     # Ground. Every one of these has to reach the plane; the module's thermal
     # pads are not optional decoration.
     signal GND ~ pin 1
     GND ~ pin 2
+    GND ~ pin 11
+    GND ~ pin 14
+    GND ~ pin 36
+    GND ~ pin 37
+    GND ~ pin 38
+    GND ~ pin 39
+    GND ~ pin 40
+    GND ~ pin 41
     GND ~ pin 42
     GND ~ pin 43
+    GND ~ pin 44
+    GND ~ pin 45
     GND ~ pin 46
     GND ~ pin 47
     GND ~ pin 48
@@ -79,15 +93,3 @@ component ESP32S3MINI1:
     GND ~ pin 51
     GND ~ pin 52
     GND ~ pin 53
-    GND ~ pin 54
-    GND ~ pin 55
-    GND ~ pin 56
-    GND ~ pin 57
-    GND ~ pin 58
-    GND ~ pin 59
-    GND ~ pin 60
-    GND ~ pin 61
-    GND ~ pin 62
-    GND ~ pin 63
-    GND ~ pin 64
-    GND ~ pin 65

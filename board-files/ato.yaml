@@ -1,3 +1,9 @@
+# Not `requires-atopile`. atopile 0.11+ calls `ato-version` deprecated and
+# refuses to build until it is renamed -- but 0.2.67, the only compiler that
+# builds these sources (see requirements.txt), reads `ato-version` and nothing
+# else, and errors out when it is missing. The two keys are mutually
+# exclusive, so this stays as-is. If you are seeing that deprecation error,
+# you are running the wrong `ato`: use the venv from requirements.txt.
 ato-version: ^0.2.0
 
 paths:

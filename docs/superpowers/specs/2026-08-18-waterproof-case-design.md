@@ -36,7 +36,7 @@ against documented V2 geometry with USB-C assumed in place of micro-USB.
 
 | Quantity | Value | Confidence |
 | --- | --- | --- |
-| PCB | 35.5 x 46.0mm | Published |
+| PCB | 33.80 x 45.96mm | **Measured** — see below |
 | PCB thickness | 1.6mm | Published |
 | Stock assembled watch | 34 x 46 x 9mm, 18g | Published |
 | Display | 1.54", 200x200 | Published |
@@ -49,11 +49,77 @@ The 46mm PCB length includes integral strap-lug tabs. Those tabs sit *inside*
 the sealed volume — the case provides its own lugs — which is why the case is
 appreciably longer than it is wide.
 
-Two published figures disagree on width: the assembled watch is listed at 34mm
-while the board is listed at 35.5mm, which cannot both be right for a board
-inside a case. The model takes 35.5mm, because oversizing the pocket costs a
-loose fit that foam takes up, while undersizing it costs a reprint. This is
-one of the numbers the coupon exists to settle.
+### The width figure is settled, and it was not 35.5mm
+
+The published 35.5 x 46.0mm was never measured; it was taken from sqfmi's
+listing. The Edge.Cuts outline of the board this case is for has since been
+measured with `pcbnew`: **33.800 x 45.960mm** on the centreline, 33.950 x
+46.110mm including the 0.15mm outline width. The assembled watch being listed
+at 34mm is the figure consistent with that; the 35.5mm one is not.
+
+Build the pocket against 33.80 x 45.96mm. That is 1.7mm narrower than this
+document previously assumed, so a pocket cut to the old figure is loose
+rather than tight — foam takes it up, but the lugs and the USB-C opening
+shift with it and those do not.
+
+### The buttons are all at V2's positions after all
+
+An earlier revision of this design moved `SW2` -- the BACK button -- 0.2mm up
+the board, and this section used to say the case had to follow. It does not.
+The move has been reverted and all four buttons sit exactly where V2 has them.
+
+The reason it was needed is worth keeping, because it constrains any future
+change in this corner. The USB-C receptacle's shield tabs are through-hole and
+stick out past the housing, and the battery connector `J3` had a mounting pad
+sitting *on* one -- 0.067mm of overlap, which is a short, not a tight
+clearance. `J3` is pinched between that tab and this button, in a corridor of
+5.430mm, and `J3` is 5.082mm long. At the 0.2mm copper clearance the board
+used to carry it needed 5.482mm and did not fit, so the button gave up the
+difference. The board now runs 0.15mm rules, where it needs 5.382mm and fits
+with 0.174mm at each end, so `J3` alone carries the fix -- it sits 0.241mm up
+the board from V2, and nothing case-facing has moved.
+
+**No dimension in this document changes.** The section is kept because the
+corridor is now spoken for to within 0.05mm: anything that widens `J3`, moves
+`SW2`, or takes the copper clearance back to 0.2mm puts the shield tab back on
+the battery connector.
+
+### Superseded: SW2 moved 0.2mm, and the case must follow
+
+`SW2` -- the BACK button -- sits at (100.57, 79.73) in board coordinates,
+0.2mm further up the board than V2 put it.
+
+The reason is copper, not ergonomics. The USB-C receptacle's shield tabs are
+through-hole and stick out past its housing, and the receptacle is 9.04mm wide
+in a 9.15mm gap. Left where V2 had them, the battery connector `J3` and the
+charger `U5` both had a pad sitting *on* a tab -- 0.067mm and 0.120mm of
+overlap, which is a short rather than a tight clearance. `U5` moved down 0.45mm
+and `J3` up 0.28mm to clear them, but `J3` is pinched between the tab and this
+button and the corridor was 0.05mm too narrow to fit it with clearance at both
+ends, so the button yielded the difference.
+
+0.2mm is far inside any FDM case tolerance and inside the pusher travel, so no
+dimension in this document changes. It is recorded because it is a real
+mechanical change to a case-facing part, and because the button positions in
+the constraint table above are marked *User-confirmed* -- if those positions
+were measured off a physical stock case rather than off the board, this is the
+one that no longer matches.
+
+### The board no longer has strap slots
+
+V2 cut two 2 x 28mm slots through the PCB, at y 72.15–74.15 and 111.61–114.11
+in board coordinates, for the strap to pin through. This board does not have
+them: they ran directly under the module and its decoupling, and they were
+removed rather than move the module (`board-files/README.md`, "Board
+outline").
+
+**The case must therefore carry the entire strap attachment.** There is no
+longer anything on the PCB for a spring bar or a pin to pass through, and
+nothing to take the load. The lugs, and whatever anchors them to the sealed
+body, are now the only mechanical path between the watch and the band. The
+20mm spring-bar lugs in the parts list below already assume case-mounted
+lugs, so the design does not change -- but it is no longer a choice, and a
+case that relied on the board's slots would have nothing to grip.
 
 Everything above is tagged in `params.scad` as `PUBLISHED`, `DERIVED` or
 `ESTIMATED`. The derived and estimated values must be confirmed with calipers

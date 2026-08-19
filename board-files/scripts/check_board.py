@@ -10,16 +10,26 @@ wrote it:
     graphical ones (display outline, logos)
   * every pad the netlist assigns is on the right net
   * no pad is on a net the netlist does not mention
-  * the mechanical parts are still at V2's coordinates
+  * the mechanical parts are still at V2's coordinates, bar two recorded moves
   * the board is 4 copper layers with a GND and a +3V3 plane
+  * the design rules in the .kicad_pro are the ones apply_netlist.py sets
   * the module's antenna keepout hangs off the board edge and forbids pour
+  * the outline is one closed shape with nothing cut out of the middle
+  * every pad is on the board
 
-It does not check routing, and there is none. Run it after
-scripts/apply_netlist.py.
+The last two are here because both have already been wrong. V2's outline
+carried two watch-strap slots, and the module and its decoupling were placed
+across one of them; the USB-C receptacle was rotated 0 instead of 90 and six
+of its pads hung over the right-hand edge in mid-air. Neither is visible in a
+netlist and neither was caught by anything until DRC ran.
 
-    /usr/bin/python3.12 scripts/check_board.py
+Whether the board is *routed* is not checked here -- `kicad-cli pcb drc`
+does that, and checks/run.sh runs it. Run this after scripts/apply_netlist.py.
+
+    python3 scripts/check_board.py
 """
 
+import json
 import os
 import sys
 
@@ -30,7 +40,7 @@ ROOT = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(ROOT, "checks"))
 from netlist_check import load  # noqa: E402
 
-BOARD = os.path.join(ROOT, "elec/layout/default/watchy-ref-s3.kicad_pcb")
+BOARD = os.path.join(ROOT, "elec/layout/default/watchy-ref-c6.kicad_pcb")
 NETLIST = os.path.join(ROOT, "build/default.net")
 
 GRAPHICAL_PREFIXES = ("REF", "G")
@@ -43,11 +53,30 @@ MECHANICAL = {
     "SW3": (70.630, 79.930),
     "SW4": (70.630, 106.330),
     "J1": (85.475, 99.770),
-    "J3": (96.830, 84.720),
+    # J3 is 0.241mm up the board from V2: its mounting pad was sitting on one
+    # of the USB-C's through-hole shield tabs, which is a short and not a
+    # clearance. Every other mechanical part, the four buttons included, is
+    # exactly where V2 has it. See apply_netlist.py's PLACEMENT.
+    "J3": (96.830, 84.479),
 }
 MECHANICAL_TOLERANCE_MM = 0.001
 
 PLANES = {"In1.Cu": "GND", "In2.Cu": "+3V3"}
+
+# Mirrors DESIGN_RULES in apply_netlist.py, which is what writes them.
+# Deliberately a second copy: this file's job is to disagree when something
+# has changed the board out from under the script that generates it.
+EXPECTED_MASK_EXPANSION_MM = 0.05
+
+EXPECTED_RULES = {
+    "clearance": 0.15,
+    "track_width": 0.15,
+    "diff_pair_width": 0.15,
+    "diff_pair_gap": 0.2,
+    "diff_pair_via_gap": 0.2,
+    "via_diameter": 0.6,
+    "via_drill": 0.3,
+}
 
 
 def is_graphical(ref):
@@ -141,6 +170,80 @@ def check(board, comps, nets):
             fail("stackup", "%s has no %s plane (found %s)"
                  % (layer, netname, found.get(layer) or "nothing"))
 
+    # ----------------------------------------------------------- design rules
+    # These live in the .kicad_pro, and loading a second board anywhere in
+    # apply_netlist.py makes KiCad's settings manager flush a stale copy of
+    # the project over them. That silently put the clearance back to 0.2 after
+    # it had been set to 0.15, and a board routed at 0.15 came back with 76
+    # clearance errors against a rule nobody had changed on purpose. Assert
+    # them so it cannot happen quietly again.
+    for zone in board.Zones():
+        if zone.GetIsRuleArea() or zone.GetNetname() != "GND":
+            continue
+        if board.GetLayerName(zone.GetLayer()) not in ("F.Cu", "B.Cu"):
+            continue
+        if zone.GetPadConnection() != 2:      # 2 = solid
+            fail("design rules", "the %s GND pour connects pads with mode %d, "
+                 "apply_netlist.py sets 2 (solid)"
+                 % (board.GetLayerName(zone.GetLayer()),
+                    zone.GetPadConnection()))
+
+    expansion = board.GetDesignSettings().m_SolderMaskExpansion
+    if abs(pcbnew.ToMM(expansion) - EXPECTED_MASK_EXPANSION_MM) > 1e-6:
+        fail("design rules", "solder mask expansion is %.3fmm, "
+             "apply_netlist.py sets %.3fmm"
+             % (pcbnew.ToMM(expansion), EXPECTED_MASK_EXPANSION_MM))
+
+    project = os.path.splitext(BOARD)[0] + ".kicad_pro"
+    try:
+        with open(project) as fh:
+            settings = json.load(fh)
+    except (IOError, ValueError) as exc:
+        fail("design rules", "cannot read %s: %s"
+             % (os.path.basename(project), exc))
+        settings = None
+    if settings is not None:
+        default = [c for c in settings.get("net_settings", {}).get("classes",
+                                                                   [])
+                   if c.get("name") == "Default"]
+        if not default:
+            fail("design rules", "no Default netclass in %s"
+                 % os.path.basename(project))
+        for cls in default:
+            for key, want in sorted(EXPECTED_RULES.items()):
+                got = cls.get(key)
+                if got != want:
+                    fail("design rules",
+                         "%s is %s, apply_netlist.py sets %s" % (key, got,
+                                                                 want))
+
+    # ----------------------------------------------------------------- outline
+    outline = pcbnew.SHAPE_POLY_SET()
+    if not board.GetBoardPolygonOutlines(outline):
+        fail("outline", "Edge.Cuts does not close into a board")
+        outline = None
+    else:
+        if outline.OutlineCount() != 1:
+            fail("outline", "Edge.Cuts makes %d separate shapes, not 1"
+                 % outline.OutlineCount())
+        for i in range(outline.OutlineCount()):
+            for h in range(outline.HoleCount(i)):
+                box = outline.Hole(i, h).BBox()
+                fail("outline", "a cutout remains at x %.2f..%.2f y %.2f..%.2f"
+                     % (pcbnew.ToMM(box.GetLeft()), pcbnew.ToMM(box.GetRight()),
+                        pcbnew.ToMM(box.GetTop()), pcbnew.ToMM(box.GetBottom())))
+
+    # ------------------------------------------------------------- pads on board
+    if outline is not None:
+        for ref, got in sorted(fps.items()):
+            for pad in got[0].Pads():
+                pos = pad.GetPosition()
+                if not outline.Collide(pcbnew.VECTOR2I(pos.x, pos.y)):
+                    fail("pads on board",
+                         "%s.%s sits at (%.3f, %.3f), which is off the board"
+                         % (ref, pad.GetPadName() or "?",
+                            pcbnew.ToMM(pos.x), pcbnew.ToMM(pos.y)))
+
     # ----------------------------------------------------------------- antenna
     module = fps.get("U1", [None])[0]
     if module is None:
@@ -168,7 +271,8 @@ def main():
     board = pcbnew.LoadBoard(BOARD)
     problems = check(board, comps, nets)
 
-    groups = ["components", "nets", "mechanical", "stackup", "antenna"]
+    groups = ["components", "nets", "mechanical", "stackup", "design rules",
+              "outline", "pads on board", "antenna"]
     total = 0
     for g in groups:
         items = problems.get(g, [])
@@ -183,7 +287,6 @@ def main():
             print("ok   %s" % g)
     print()
     print("%d problem(s)" % total)
-    print("routing is NOT checked, and the board is NOT routed")
     return 1 if total else 0
 
 

@@ -4,8 +4,8 @@
 
 namespace RefPanel {
 
-Panel display(GxEPD2_154_D67(PIN_DISPLAY_CS, PIN_DISPLAY_DC, PIN_DISPLAY_RST,
-                             PIN_DISPLAY_BUSY));
+Panel display(GxEPD2_154_GDEY0154D67(PIN_DISPLAY_CS, PIN_DISPLAY_DC,
+                                     PIN_DISPLAY_RST, PIN_DISPLAY_BUSY));
 
 void begin() {
 #ifdef ARDUINO_ESP32S3_DEV

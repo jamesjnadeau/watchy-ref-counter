@@ -8,7 +8,7 @@ Quantity,Value,Footprint,Library,Designators
 3,4.7uF/50V,C_0805_2012Metric,Capacitor_SMD,"C3,C4,C12"
 4,MBR0530 Schottky,D_SOD-123,Diode_SMD,"D1,D2,D3,D4"
 1,1N4001,D_SOD-123F,Diode_SMD,D6
-1,ESP32-S3-MINI-1,ESP32-S3-MINI-1,footprints,U1
+1,ESP32-C6-MINI-1,ESP32-C6-MINI-1,footprints,U1
 4,Side tactile switch,K2-1114SA-A4SW-06,footprints,"SW1,SW2,SW3,SW4"
 1,LED (charge status),LED_0603_1608Metric,LED_SMD,D5
 1,10uH 1A,L_Taiyo-Yuden_NR-40xx,Inductor_SMD,L1

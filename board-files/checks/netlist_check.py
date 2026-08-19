@@ -27,25 +27,30 @@ import re
 import sys
 
 # --------------------------------------------------------------------------
-# ESP32-S3-MINI-1 datasheet Table 3-1. Pad number -> GPIO name.
+# ESP32-C6-MINI-1 datasheet v1.5 Table 3-1. Pad number -> GPIO name.
 MINI1_PADS = {
-    4: "IO0", 5: "IO1", 6: "IO2", 7: "IO3", 8: "IO4", 9: "IO5", 10: "IO6",
-    11: "IO7", 12: "IO8", 13: "IO9", 14: "IO10", 15: "IO11", 16: "IO12",
-    17: "IO13", 18: "IO14", 19: "IO15", 20: "IO16", 21: "IO17", 22: "IO18",
-    23: "IO19", 24: "IO20", 25: "IO21", 26: "IO26", 27: "IO47", 28: "IO33",
-    29: "IO34", 30: "IO48", 31: "IO35", 32: "IO36", 33: "IO37", 34: "IO38",
-    35: "IO39", 36: "IO40", 37: "IO41", 38: "IO42", 39: "TXD0", 40: "RXD0",
-    41: "IO45", 44: "IO46", 45: "EN",
+    5: "IO2", 6: "IO3", 8: "EN", 9: "IO4", 10: "IO5", 12: "IO0", 13: "IO1",
+    15: "IO6", 16: "IO7", 17: "IO12", 18: "IO13", 19: "IO14", 20: "IO15",
+    22: "IO8", 23: "IO9", 24: "IO18", 25: "IO19", 26: "IO20", 27: "IO21",
+    28: "IO22", 29: "IO23", 30: "IO17", 31: "IO16",
 }
-MINI1_GND_PADS = {1, 2, 42, 43} | set(range(46, 66))
+MINI1_GND_PADS = {1, 2, 11, 14} | set(range(36, 54))
 MINI1_VDD_PAD = 3
+MINI1_EN_PAD = 8
+# Pads 4, 7, 21 and 32-35 are NC and carry nothing.
+MINI1_NC_PADS = {4, 7, 21, 32, 33, 34, 35}
 
-# Only IO0-IO21 are RTC GPIOs, so only they can wake ext1 from deep sleep.
-RTC_GPIOS = {"IO%d" % n for n in range(0, 22)}
-# ADC1 only. ADC2 is unavailable while WiFi is running.
-ADC1_GPIOS = {"IO%d" % n for n in range(1, 11)}
-# Strapping pins: nothing but the documented GPIO0 test pad may touch these.
-STRAPPING = {"IO0", "IO3", "IO45", "IO46"}
+# Only IO0-IO7 are LP (RTC) GPIOs, so only they can wake the chip from deep
+# sleep. Everything else is light-sleep only.
+RTC_GPIOS = {"IO%d" % n for n in range(0, 8)}
+# ADC1_CH0..CH6 only. The C6 has no usable second ADC while WiFi is running.
+ADC1_GPIOS = {"IO%d" % n for n in range(0, 7)}
+# Boot strapping pins (Table 4-3). IO9 must be high when reset is released or
+# the chip comes up in download mode; IO8 is "Any value" for SPI boot, so it
+# is a normal GPIO here. MTMS (IO4), MTDI (IO5) and IO15 are latched too but
+# only select the SDIO clock edge and the JTAG source, neither of which this
+# design uses -- see elec/src/mcu.ato.
+STRAPPING = {"IO9"}
 
 MCU = "U1"
 RTC = "U6"
@@ -53,27 +58,33 @@ USB = "J2"
 
 # The spec's pin map, verbatim.
 PIN_MAP = {
-    "BTN_MENU": "IO4",
-    "BTN_BACK": "IO5",
-    "BTN_UP": "IO6",
-    "BTN_DOWN": "IO7",
-    "RTC_INT": "IO8",
-    "BATT_ADC": "IO9",
-    "SCL": "IO11",
-    "SDA": "IO12",
-    "VIB_PWM": "IO17",
-    "USB_DM": "IO19",
-    "USB_DP": "IO20",
-    "EPD_SCK": "IO47",
-    "EPD_CS": "IO33",
-    "EPD_DC": "IO34",
-    "EPD_MOSI": "IO48",
-    "EPD_RST": "IO35",
-    "EPD_BUSY": "IO36",
-    "TP_BOOT": "IO0",
-    "TP_TX": "TXD0",
-    "TP_RX": "RXD0",
+    "BTN_UP": "IO2",
+    "BTN_DOWN": "IO3",
+    "RTC_INT": "IO4",
+    "BTN_MENU": "IO0",
+    "BTN_BACK": "IO1",
+    "BATT_ADC": "IO5",
+    "SCL": "IO6",
+    "SDA": "IO7",
+    "USB_DM": "IO12",
+    "USB_DP": "IO13",
+    "EPD_MOSI": "IO14",
+    "EPD_SCK": "IO15",
+    "EPD_CS": "IO8",
+    "EPD_DC": "IO18",
+    "EPD_RST": "IO19",
+    "EPD_BUSY": "IO20",
+    "VIB_PWM": "IO21",
+    "TP_BOOT": "IO9",
 }
+
+# The display fan-out is only planar if these six leave the module in the
+# same left-to-right order the panel's FPC presents them. Pad number order
+# round the module is the physical order: bottom row left to right, then up
+# the right column.
+EPD_FANOUT = [(19, "EPD_MOSI"), (20, "EPD_SCK"), (22, "EPD_CS"),
+              (24, "EPD_DC"), (25, "EPD_RST"), (26, "EPD_BUSY")]
+
 BUTTON_NETS = ["BTN_MENU", "BTN_BACK", "BTN_UP", "BTN_DOWN"]
 BUTTON_SWITCHES = {"SW1": "BTN_MENU", "SW2": "BTN_BACK",
                    "SW3": "BTN_UP", "SW4": "BTN_DOWN"}
@@ -279,7 +290,7 @@ def check_strapping(comps, nets):
         net = net_of(nets, MCU, pad)
         if net is None:
             continue
-        allowed = {"TP_BOOT"} if gpio == "IO0" else set()
+        allowed = {"TP_BOOT"} if gpio == "IO9" else set()
         # An unconnected pin shows up as its own single-node net.
         if len(nets.get(net, [])) <= 1:
             continue
@@ -405,12 +416,9 @@ def check_mcu_power(comps, nets):
     bad = []
     if MCU not in comps:
         return ["%s is missing" % MCU]
-    if "S3-MINI-1" not in comps[MCU]["value"].upper().replace(" ", ""):
-        bad.append("%s is %r, expected ESP32-S3-MINI-1" %
+    if "C6-MINI-1" not in comps[MCU]["value"].upper().replace(" ", ""):
+        bad.append("%s is %r, expected ESP32-C6-MINI-1" %
                    (MCU, comps[MCU]["value"]))
-    if "N4R2" in comps[MCU]["value"].upper():
-        bad.append("%s is the -N4R2 variant, which consumes IO26 for PSRAM"
-                   % MCU)
     if net_of(nets, MCU, MINI1_VDD_PAD) != "+3V3":
         bad.append("%s pad %d (3V3) is on %s, not +3V3" %
                    (MCU, MINI1_VDD_PAD, net_of(nets, MCU, MINI1_VDD_PAD)))
@@ -421,9 +429,9 @@ def check_mcu_power(comps, nets):
     missing = sorted(p for p in MINI1_GND_PADS if net_of(nets, MCU, p) is None)
     if missing:
         bad.append("%s GND pads not connected at all: %s" % (MCU, missing))
-    if net_of(nets, MCU, 45) != "EN":
-        bad.append("%s pad 45 (EN) is on %s, not EN" %
-                   (MCU, net_of(nets, MCU, 45)))
+    if net_of(nets, MCU, MINI1_EN_PAD) != "EN":
+        bad.append("%s pad %d (EN) is on %s, not EN" %
+                   (MCU, MINI1_EN_PAD, net_of(nets, MCU, MINI1_EN_PAD)))
     return bad
 
 
@@ -451,13 +459,33 @@ def check_deleted(comps, nets):
                            (ref, data["value"]))
     for ref in V2_CLKOUT_ATTENUATOR:
         if ref in comps:
-            bad.append("%s is part of V2's CLKOUT attenuator; the S3 runs its "
+            bad.append("%s is part of V2's CLKOUT attenuator; the C6 runs its "
                        "RTC domain on the internal RC (spec D5)" % ref)
+    return bad
+
+
+def check_epd_fanout(comps, nets):
+    """The six display signals must leave the module in FPC order.
+
+    J1's pinout is fixed by the panel -- left to right it is MOSI, SCK, CS,
+    DC, RST, BUSY -- so the fan-out only stays planar if the module presents
+    them in that same order going clockwise round its pads. Getting this
+    wrong is not a DRC error and not a netlist error; it just quietly makes
+    three or four of these nets unroutable, which is how the S3 layout spent
+    a week with EPD nets it could not place.
+    """
+    bad = []
+    for pad, want in EPD_FANOUT:
+        got = net_of(nets, MCU, pad)
+        if got != want:
+            bad.append("%s pad %d carries %s, but the planar fan-out needs %s"
+                       % (MCU, pad, got, want))
     return bad
 
 
 CHECKS = [
     ("pin map", check_pin_map),
+    ("display fan-out order", check_epd_fanout),
     ("deep-sleep wake pins", check_wake_capable),
     ("battery ADC on ADC1", check_adc1),
     ("strapping pins", check_strapping),

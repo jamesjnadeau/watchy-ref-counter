@@ -1,0 +1,24 @@
+# The compiler this design is written against. Pinned exactly, not floated:
+# `pip install atopile` now installs 0.12.6, which refuses to build these
+# sources at all.
+#
+#   python3 -m venv ~/.venvs/ato && ~/.venvs/ato/bin/pip install -r requirements.txt
+#
+# Why 0.2.67 and not something newer -- every one of these was tried:
+#
+#   0.2.68, 0.2.69  cap at Python <3.13. 0.2.67 is the newest 0.2.x that
+#                   installs on a current interpreter.
+#   0.3 .. 0.11     reject the sources. `paths.footprints` is gone, and
+#                   `package` is now an enum of standard package names, so
+#                   `package = "TestPoint_1.0mm"` in parts.ato is an error.
+#                   Migrating means rewriting the part definitions.
+#   0.12            installs and then refuses to run: "atopile 0.12 is no
+#                   longer supported. The CLI has been replaced by the app at
+#                   app.atopile.io".
+#   0.14, 0.15      require Python 3.14. 0.15.8 is the last CLI release and
+#                   is maintenance-only.
+#   0.16+           is not a CLI. It is a hosted application.
+#
+# So there is no newer version to move to that keeps this a headless build,
+# and the upstream direction is away from one. See UNVERIFIED.md.
+atopile==0.2.67
