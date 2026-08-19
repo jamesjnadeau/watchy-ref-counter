@@ -4,8 +4,8 @@
 // that produces a plausible wrong answer rather than an obvious failure:
 //
 //            seconds  minutes  hours  weekday  date  month  year
-//   PCF8563   0x02     0x03    0x04    0x06    0x05  0x07   0x08
-//   RV-3028   0x00     0x01    0x02    0x03    0x04  0x05   0x06
+//   PCF8563   0x02     0x03    0x04    0x06     0x05  0x07   0x08
+//   RV-3028   0x00     0x01    0x02    0x03     0x04  0x05   0x06
 //
 // Note the middle two columns. The PCF8563 puts the date before the weekday
 // and the RV-3028 puts the weekday first, so a driver that copies the wrong
@@ -50,44 +50,51 @@ uint8_t bcd(uint8_t v) { return (uint8_t)(((v / 10) << 4) | (v % 10)); }
 const uint8_t ADDR_PCF8563 = 0x51;
 const uint8_t ADDR_RV3028  = 0x52;
 
-// 2026-08-19 is a Wednesday: tm_wday 3, tm_mday 19, tm_mon 7, tm_year 126.
-// The date and the weekday are deliberately different numbers, and neither is
-// a number the other register could hold by accident.
+// 2026-11-25 21:47:38, a Wednesday: tm_wday 3, tm_mday 25, tm_mon 10.
+//
+// Every field is >= 10 on purpose. Below that, BCD and binary are the same
+// number, so a fixture of 08:05 would pass against a driver that had dropped
+// fromBcd() entirely. The month is 11 (BCD 0x11 = 17 read raw, which read()'s
+// range check rejects), the hour is 21 (BCD 0x21, which a 12-hour 0x1F mask
+// would truncate to 1), and the date and weekday are different numbers that
+// neither register could hold by accident.
 void loadPcf8563(WireStub::Device &d) {
-  d.reg[0x02] = bcd(45);       // seconds, bit 7 (VL) clear
-  d.reg[0x03] = bcd(31);       // minutes
-  d.reg[0x04] = bcd(14);       // hours
-  d.reg[0x05] = bcd(19);       // date
+  d.reg[0x02] = bcd(38);       // seconds, bit 7 (VL) clear
+  d.reg[0x03] = bcd(47);       // minutes
+  d.reg[0x04] = bcd(21);       // hours
+  d.reg[0x05] = bcd(25);       // date
   d.reg[0x06] = 3;             // weekday
-  d.reg[0x07] = bcd(8);        // month
+  d.reg[0x07] = bcd(11);       // month
   d.reg[0x08] = bcd(26);       // year
 }
 
 void loadRv3028(WireStub::Device &d) {
-  d.reg[0x00] = bcd(45);       // seconds
-  d.reg[0x01] = bcd(31);       // minutes
-  d.reg[0x02] = bcd(14);       // hours
+  d.reg[0x00] = bcd(38);       // seconds
+  d.reg[0x01] = bcd(47);       // minutes
+  d.reg[0x02] = bcd(21);       // hours
   d.reg[0x03] = 3;             // weekday
-  d.reg[0x04] = bcd(19);       // date
-  d.reg[0x05] = bcd(8);        // month
+  d.reg[0x04] = bcd(25);       // date
+  d.reg[0x05] = bcd(11);       // month
   d.reg[0x06] = bcd(26);       // year
   d.reg[0x0E] = 0x00;          // status: PORF clear, so the time is good
+  d.reg[0x0F] = 0x5A;          // control 1: an arbitrary value begin() must
+                               // leave alone
 }
 
-void expectAugust19(const struct tm &t, const char *label) {
+void expectNovember25(const struct tm &t, const char *label) {
   char what[96];
   snprintf(what, sizeof(what), "%s: year", label);
   checkEq(t.tm_year, 126, what);
-  snprintf(what, sizeof(what), "%s: month", label);
-  checkEq(t.tm_mon, 7, what);
+  snprintf(what, sizeof(what), "%s: month (11, whose BCD 0x11 is not 11)", label);
+  checkEq(t.tm_mon, 10, what);
   snprintf(what, sizeof(what), "%s: day of month", label);
-  checkEq(t.tm_mday, 19, what);
-  snprintf(what, sizeof(what), "%s: hour", label);
-  checkEq(t.tm_hour, 14, what);
+  checkEq(t.tm_mday, 25, what);
+  snprintf(what, sizeof(what), "%s: hour (21, which a 12-hour mask truncates)", label);
+  checkEq(t.tm_hour, 21, what);
   snprintf(what, sizeof(what), "%s: minute", label);
-  checkEq(t.tm_min, 31, what);
+  checkEq(t.tm_min, 47, what);
   snprintf(what, sizeof(what), "%s: second", label);
-  checkEq(t.tm_sec, 45, what);
+  checkEq(t.tm_sec, 38, what);
 }
 
 void testEmptyBus() {
@@ -111,7 +118,7 @@ void testPcf8563() {
 
   struct tm t;
   check(rtc.read(t), "PCF8563: read succeeds");
-  expectAugust19(t, "PCF8563");
+  expectNovember25(t, "PCF8563");
 }
 
 void testPcf8563LowVoltage() {
@@ -136,7 +143,7 @@ void testRv3028() {
 
   struct tm t;
   check(rtc.read(t), "RV-3028: read succeeds");
-  expectAugust19(t, "RV-3028");
+  expectNovember25(t, "RV-3028");
 }
 
 // The transposition test. If the driver read the RV-3028 with the PCF8563's
@@ -147,7 +154,7 @@ void testRv3028RegisterOrder() {
   WireStub::Device &d = WireStub::attach(ADDR_RV3028);
   loadRv3028(d);
   d.reg[0x03] = 1;       // weekday: Monday
-  d.reg[0x04] = bcd(28); // date: the 28th
+  d.reg[0x04] = bcd(28); // date: the 28th, which no weekday register can hold
 
   RefRtc rtc;
   rtc.begin();
@@ -178,6 +185,69 @@ void testRv3028Begin() {
   rtc.begin();
   checkEq(d.reg[0x10], 0x00,
           "RV-3028: begin() clears control 2, so INT never asserts");
+  checkEq(d.reg[0x0F], 0x5A,
+          "RV-3028: begin() leaves control 1 as the part shipped it");
+}
+
+void testPcf8563Begin() {
+  WireStub::reset();
+  WireStub::Device &d = WireStub::attach(ADDR_PCF8563);
+  loadPcf8563(d);
+  d.reg[0x00] = 0xFF;
+  d.reg[0x01] = 0xFF;
+
+  RefRtc rtc;
+  rtc.begin();
+  checkEq(d.reg[0x00], 0x00, "PCF8563: begin() clears control 1");
+  checkEq(d.reg[0x01], 0x00, "PCF8563: begin() clears control 2");
+}
+
+// set() writes the time and then clears the power-on reset flag in a second
+// transaction. If that second one fails, the chip holds the right time but
+// goes on calling it unset -- so set() has to report the failure rather than
+// claim success. Reporting "not set" is the safe direction: the alternative
+// ordering would leave a cleared flag over a stale time, which reads as a
+// confidently wrong clock.
+void testRv3028SetFlagClearFails() {
+  WireStub::reset();
+  WireStub::Device &d = WireStub::attach(ADDR_RV3028);
+  loadRv3028(d);
+  d.reg[0x0E] = 0x01;
+
+  RefRtc rtc;
+  rtc.begin();
+
+  struct tm t = {};
+  t.tm_year = 126;
+  t.tm_mon  = 11;
+  t.tm_mday = 31;
+  t.tm_hour = 23;
+  t.tm_min  = 59;
+  t.tm_sec  = 58;
+
+  // Let the time write through, then refuse the status read-back that follows.
+  d.nackSkip = 1;
+  d.nacks    = 1;
+  check(!rtc.set(t), "RV-3028: set reports failure if the flag clear NACKs");
+  checkEq(d.reg[0x00], bcd(58), "RV-3028: the time itself still landed");
+
+  // And a later attempt on a healthy bus recovers, so this is not a dead end.
+  check(rtc.set(t), "RV-3028: a retry after the bus recovers succeeds");
+  checkEq(d.reg[0x0E] & 0x01, 0, "RV-3028: the retry clears the flag");
+}
+
+void testReadTransactionFails() {
+  WireStub::reset();
+  WireStub::Device &d = WireStub::attach(ADDR_RV3028);
+  loadRv3028(d);
+
+  RefRtc rtc;
+  rtc.begin();
+
+  struct tm t;
+  d.nacks = 1;
+  check(!rtc.read(t), "RV-3028: a NACKed read fails rather than inventing a time");
+  check(rtc.read(t), "RV-3028: and the next read recovers");
 }
 
 void testRv3028Set() {
@@ -189,30 +259,33 @@ void testRv3028Set() {
   RefRtc rtc;
   rtc.begin();
 
+  // 2026-12-31 23:59:58, a Thursday. Every field >= 10 again, so toBcd has to
+  // actually run, and December is the month a 0x0F month mask would mangle.
   struct tm t = {};
   t.tm_year = 126; // 2026
-  t.tm_mon  = 7;   // August
-  t.tm_mday = 19;
-  t.tm_hour = 9;
-  t.tm_min  = 5;
-  t.tm_sec  = 7;
+  t.tm_mon  = 11;  // December
+  t.tm_mday = 31;
+  t.tm_hour = 23;
+  t.tm_min  = 59;
+  t.tm_sec  = 58;
   check(rtc.set(t), "RV-3028: set succeeds");
 
-  checkEq(d.reg[0x00], bcd(7), "RV-3028: seconds written to 0x00");
-  checkEq(d.reg[0x01], bcd(5), "RV-3028: minutes written to 0x01");
-  checkEq(d.reg[0x02], bcd(9), "RV-3028: hours written to 0x02");
-  checkEq(d.reg[0x03], 3, "RV-3028: weekday written to 0x03 (a Wednesday)");
-  checkEq(d.reg[0x04], bcd(19), "RV-3028: date written to 0x04");
-  checkEq(d.reg[0x05], bcd(8), "RV-3028: month written to 0x05");
-  checkEq(d.reg[0x06], bcd(26), "RV-3028: year written to 0x06");
+  checkEq(d.reg[0x00], bcd(58), "RV-3028: seconds written to 0x00 in BCD");
+  checkEq(d.reg[0x01], bcd(59), "RV-3028: minutes written to 0x01 in BCD");
+  checkEq(d.reg[0x02], bcd(23), "RV-3028: hours written to 0x02 in BCD");
+  checkEq(d.reg[0x03], 4, "RV-3028: weekday written to 0x03 as plain binary");
+  checkEq(d.reg[0x04], bcd(31), "RV-3028: date written to 0x04 in BCD");
+  checkEq(d.reg[0x05], bcd(12), "RV-3028: month written to 0x05 in BCD");
+  checkEq(d.reg[0x06], bcd(26), "RV-3028: year written to 0x06 in BCD");
   checkEq(d.reg[0x0E] & 0x01, 0,
           "RV-3028: set clears the power-on reset flag");
 
   // And the round trip, which is the thing that actually matters.
   struct tm back;
   check(rtc.read(back), "RV-3028: reads back what set wrote");
-  checkEq(back.tm_mday, 19, "RV-3028: round trip keeps the date");
-  checkEq(back.tm_hour, 9, "RV-3028: round trip keeps the hour");
+  checkEq(back.tm_mday, 31, "RV-3028: round trip keeps the date");
+  checkEq(back.tm_hour, 23, "RV-3028: round trip keeps the hour");
+  checkEq(back.tm_mon, 11, "RV-3028: round trip keeps December");
 }
 
 void testPcf8563Set() {
@@ -225,17 +298,19 @@ void testPcf8563Set() {
 
   struct tm t = {};
   t.tm_year = 126;
-  t.tm_mon  = 7;
-  t.tm_mday = 19;
-  t.tm_hour = 9;
-  t.tm_min  = 5;
-  t.tm_sec  = 7;
+  t.tm_mon  = 11; // December
+  t.tm_mday = 31;
+  t.tm_hour = 23;
+  t.tm_min  = 59;
+  t.tm_sec  = 58;
   check(rtc.set(t), "PCF8563: set succeeds");
 
-  checkEq(d.reg[0x02], bcd(7), "PCF8563: seconds written to 0x02");
-  checkEq(d.reg[0x05], bcd(19), "PCF8563: date written to 0x05");
-  checkEq(d.reg[0x06], 3, "PCF8563: weekday written to 0x06");
-  checkEq(d.reg[0x07], bcd(8), "PCF8563: month written to 0x07");
+  checkEq(d.reg[0x02], bcd(58), "PCF8563: seconds written to 0x02 in BCD");
+  checkEq(d.reg[0x03], bcd(59), "PCF8563: minutes written to 0x03 in BCD");
+  checkEq(d.reg[0x04], bcd(23), "PCF8563: hours written to 0x04 in BCD");
+  checkEq(d.reg[0x05], bcd(31), "PCF8563: date written to 0x05 in BCD");
+  checkEq(d.reg[0x06], 4, "PCF8563: weekday written to 0x06 as plain binary");
+  checkEq(d.reg[0x07], bcd(12), "PCF8563: month written to 0x07 in BCD");
 }
 
 // Both chips on one bus never happens on real hardware -- no board fits two --
@@ -265,7 +340,10 @@ int main() {
   testRv3028RegisterOrder();
   testRv3028PowerOnResetFlag();
   testRv3028Begin();
+  testPcf8563Begin();
   testRv3028Set();
+  testRv3028SetFlagClearFails();
+  testReadTransactionFails();
   testPcf8563Set();
   testBothPresent();
 

@@ -567,9 +567,8 @@ pio run -e watchy_v2 -t upload
 
 `watchy_c6` pulls a different PlatformIO platform — the pioarduino fork —
 because the official `espressif32` tops out at Arduino-ESP32 2.0.17, which has
-no ESP32-C6 support at all. Note that the board has never been fabricated and
-its RV-3028-C7 has no driver in this firmware yet, so a C6 build cannot keep
-time across a power cut.
+no ESP32-C6 support at all. Note that the board has never been fabricated, so
+nothing in that env has run on anything.
 
 The first build downloads about 1.5GB of ESP32 toolchain and takes a few
 minutes; later builds take under a minute.
@@ -714,8 +713,11 @@ PCF8563's date register, or to skip the power-on reset check, fails it.
   reference firmware's tuned one), light sleep, and whether the four buttons
   are physically where `board.h` says they are. `RefRtc`'s BCD decoding and
   chip probing used to head that list; they are now covered by
-  `tests/rtc_test.cpp` against a stub bus, which proves the arithmetic but
-  not that either chip answers on a real board.
+  `tests/rtc_test.cpp` against a stub bus. That covers the register layouts,
+  the BCD conversion in both directions and the failure paths; it says nothing
+  about whether either chip answers at its address on a real board, and the
+  stub models none of clock stretching, arbitration or the RV-3028's bus
+  timeout.
 - Sport presets add their own untested territory: whether the leading `1`
   actually clears from the panel when a clock crosses 100 → 99 (the widened
   refresh window is the fix; only a real panel confirms it), whether nine

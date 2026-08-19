@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# Host tests for the parts of the sketch that are pure arithmetic.
+# Host tests for the parts of the sketch that can run off the watch.
 #
 # RefZone.cpp, RefSegments.cpp, RefSport.cpp, RefSyncSchedule.cpp, RefWifi.cpp
-# and RefMenuItems.cpp are the files with logic worth testing off the watch,
-# and board.h's pin maps are checked here too. Between them: no
+# and RefMenuItems.cpp are the files with logic worth testing off the watch;
+# board.h's pin maps are checked here too, and RefRtc.cpp runs against a stub
+# I2C bus. Between them: no
 # panel, no GPIO, and the sort of bugs -- a daylight saving date, a digit
 # running off the edge of the screen, a clamp, a due-time boundary, a menu row
 # in the wrong place -- that are expensive to find on hardware. They compile

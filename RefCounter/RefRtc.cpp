@@ -73,8 +73,9 @@ void RefRtc::begin() {
     // INT line stays deasserted. This firmware never programs an alarm, and
     // an alarm nobody clears would hold INT low for good -- which matters
     // because that pin is wired to a wake-capable GPIO on the C6 board.
-    // Control 1 is left alone: it holds the EEPROM refresh settings, and
-    // nothing here touches the EEPROM.
+    // Control 1 is left as the part ships. It carries the EEPROM refresh bit
+    // and the countdown timer's setup, and this firmware wants neither -- the
+    // timer's interrupt is already held off by control 2 above.
     const uint8_t control2 = 0x00;
     writeRegisters(ADDR_RV3028, RV3028_CONTROL2, &control2, 1);
   } else if (present(ADDR_PCF8563)) {
@@ -106,10 +107,11 @@ bool RefRtc::readPCF8563(struct tm &out) {
   return true;
 }
 
-// RV-3028 registers 0x00..0x06: seconds, minutes, hours, weekday, date, month
-// (no century bit -- the chip has a full century counter it is not worth
-// reading), year. Note the weekday and date order, which is the reverse of the
-// PCF8563's.
+// RV-3028 registers 0x00..0x06: seconds, minutes, hours, weekday, date, month,
+// year. Note the weekday and date order, which is the reverse of the
+// PCF8563's, and that there is no century bit anywhere: the year register runs
+// 00..99 and the part's leap year rule is specified for 2000..2099 only, which
+// is where the +100 below comes from.
 bool RefRtc::readRV3028(struct tm &out) {
   uint8_t status;
   if (!readRegisters(ADDR_RV3028, RV3028_STATUS, &status, 1)) {
@@ -125,7 +127,10 @@ bool RefRtc::readRV3028(struct tm &out) {
   }
   out.tm_sec  = fromBcd(r[0] & 0x7F);
   out.tm_min  = fromBcd(r[1] & 0x7F);
-  out.tm_hour = fromBcd(r[2] & 0x3F); // 24 hour mode, forced in begin()
+  // Hours bits 7:6 read as zero and 12/24 mode lives in control 2, not here.
+  // In 12 hour mode bit 5 would be AM/PM and this mask would fold it into the
+  // tens digit -- so if that mode is ever wanted, this line changes too.
+  out.tm_hour = fromBcd(r[2] & 0x3F);
   out.tm_mday = fromBcd(r[4] & 0x3F);
   out.tm_mon  = fromBcd(r[5] & 0x1F) - 1;
   out.tm_year = fromBcd(r[6]) + 100;
@@ -181,7 +186,7 @@ bool RefRtc::set(const struct tm &in) {
   case RV3028: {
     const uint8_t r[7] = {
         toBcd((uint8_t)t.tm_sec),        toBcd((uint8_t)t.tm_min),
-        toBcd((uint8_t)t.tm_hour),       // bit 6 clear selects 24 hour mode
+        toBcd((uint8_t)t.tm_hour),       // 24 hour mode; see begin()
         (uint8_t)t.tm_wday,              toBcd((uint8_t)t.tm_mday),
         toBcd((uint8_t)(t.tm_mon + 1)),  toBcd((uint8_t)(t.tm_year % 100)),
     };

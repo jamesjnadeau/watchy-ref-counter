@@ -97,6 +97,10 @@ Remove V1.0, V1.5 and V3. The supported set becomes:
 
 ## Known gap — the C6 has no RTC driver
 
+> **Closed 2026-08-19**, after this spec's work landed. `RefRtc` now drives the
+> RV-3028-C7 at 0x52 and a C6 build keeps time. The section is left as written
+> because it is what the removal was scoped against; read it as history.
+
 The C6 board carries an RV-3028-C7 at 0x52. `RefRtc` has never known about it:
 today the C6 build probes for a DS3231 and a PCF8563, finds neither, and lands
 on `Kind::NONE`, which means no timekeeping at all. That is the state before
