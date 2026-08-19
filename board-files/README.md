@@ -39,6 +39,7 @@ board-files/
   checks/netlist_check.py           design assertions against the netlist
   checks/make_bom.py                fab BOM generator
   checks/run.sh                     build, assert, generate, check the board
+  elec/layout/v2-baseline.kicad_pcb V2's layout, untouched; the overlap reference
   scripts/apply_netlist.py          netlist -> PCB, headless (mutates the board)
   scripts/check_board.py            asserts the PCB matches the netlist
   fab/BOM.csv                       generated, committed
@@ -103,7 +104,8 @@ dropped, replaces the ones whose footprint changed *while preserving V2's
 position* (most of those swaps are only a KiCad 5→7 library rename, and losing
 placement over a rename would defeat the point of pinning the designators),
 adds the new parts, assigns all 249 pads to their 73 nets, lays the GND and
-`+3V3` pours, and nudges the small parts it placed off their neighbours.
+`+3V3` pours, nudges the small parts it placed off their neighbours, and
+relocates the parts the module and the USB-C displaced.
 
 ```bash
 /usr/bin/python3.12 scripts/apply_netlist.py --dry-run   # report only
@@ -114,19 +116,37 @@ It needs the interpreter KiCad's `pcbnew` bindings were built against, not a
 venv. `scripts/check_board.py` then verifies the result independently, and
 `checks/run.sh` runs it.
 
-### What still needs a human
+### Placement
 
-The script reports courtyard overlaps it could not resolve, with how deep each
-one is. Anything under ~0.2mm is KiCad 7's footprints being slightly larger
-than KiCad 5's and can be ignored. The rest are real:
+The seven parts the new layout displaced are placed by anchoring each to the
+pad it actually serves and taking the nearest clear spot to it — which is what
+you would do by hand, and is what decoupling wants anyway:
 
-| Overlap | Why |
-| --- | --- |
-| `U1` vs `C12`, `C1`, `R1`, `R7`, `Q5` | The module is 15.4 × 20.5mm where V2 had a 7 × 7mm QFN. It genuinely occupies the space V2's decoupling, the EN network and the RTC pull-up live in. Those five parts have to move. |
-| `D4` vs `J2` (2.3mm), `J2` vs `U2` | The USB-C receptacle is bigger than the micro-USB it replaces, at the same edge position. |
+| Part | Anchored to | Distance |
+| --- | --- | --- |
+| `C12` +3V3 bulk | `U1` pad 3 (3V3) | 3.00 mm |
+| `C1` EN cap | `U1` pad 45 (EN) | 2.00 mm |
+| `R1` EN pull-up | `U1` pad 45 | 2.83 mm |
+| `R7` RTC_INT pull-up | `U6` pin 2 (INT) | 1.80 mm |
+| `Q5` motor driver | `M1` pad 2 | 3.50 mm |
+| `U2` LDO | `Q4` pad 2 | **11.07 mm — review** |
+| `D4` OR-ing diode | `Q4` pad 2 | **12.81 mm — review** |
 
-Those are design decisions, not arithmetic, which is why the script reports
-them instead of guessing. After resolving them:
+Relocation only fires for a part that is actually overlapping something, so
+re-running over a board you have been editing will not undo your placement.
+
+`U2` and `D4` are flagged because the area around `Q4` is dense — the charger,
+its programming resistors and the FPC connector are all there — and the
+nearest clear space is a long way off. Both carry DC power rather than a
+switching node, so the distance is tolerable, but it is worth a look before
+routing.
+
+What is left is nine courtyard overlaps of 0.10–0.23 mm, all between parts
+carried over from V2 unchanged. They come from KiCad 7's footprints being
+fractionally larger than KiCad 5's, not from this design, and the report says
+so with the depth of each.
+
+Then:
 
 1. Route `USB_DP`/`USB_DM` as a 90-ohm differential pair over the In1.Cu
    ground plane, first, before anything else claims the space.
@@ -138,6 +158,14 @@ The module's antenna needs no manual keepout: Espressif's footprint carries a
 rule area on `*.Cu` that forbids tracks, vias, pads and pour on every layer,
 and `apply_netlist.py` places the module so that area hangs off the top edge.
 `check_board.py` asserts both.
+
+### Why there is a second copy of the board
+
+`elec/layout/v2-baseline.kicad_pcb` is V2's layout converted and given the
+4-layer stackup, otherwise untouched. The overlap report diffs against it.
+Diffing against the working board instead would be self-excusing: after one
+run the working board *is* this script's output, so every overlap it
+introduced would come back labelled "V2 already had this one". Do not edit it.
 
 ### Board outline
 

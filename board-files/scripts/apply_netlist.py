@@ -40,6 +40,12 @@ sys.path.insert(0, os.path.join(ROOT, "checks"))
 from netlist_check import load  # noqa: E402
 
 BOARD = os.path.join(ROOT, "elec/layout/default/watchy-ref-s3.kicad_pcb")
+# V2's layout, converted to the modern format and given a 4-layer stackup, but
+# otherwise untouched. It is the reference the overlap report diffs against.
+# Reading the baseline out of BOARD instead would be self-excusing: after the
+# first run BOARD is this script's own output, so every overlap it introduced
+# would come back labelled "V2 already had this".
+BASELINE = os.path.join(ROOT, "elec/layout/v2-baseline.kicad_pcb")
 NETLIST = os.path.join(ROOT, "build/default.net")
 PROJECT_LIB = os.path.join(ROOT, "elec/footprints/footprints.pretty")
 STOCK_LIB = "/usr/share/kicad/footprints"
@@ -80,6 +86,29 @@ PLACEMENT = {
     "TP8": (88.5, 108.4, 0),
     "TP9": (82.0, 92.2, 0),
 }
+
+# Parts the new layout displaces, and the pad each one should sit next to.
+#
+# The module is 15.4 x 20.5mm where V2 had a 7 x 7mm QFN, and the USB-C is
+# bigger than the micro-USB it replaces, so seven of V2's parts are now under
+# something. Rather than shuffling them somewhere arbitrary, each is anchored
+# to the pad it actually serves and placed at the nearest clear spot to it,
+# which is what you would do by hand and is what decoupling wants anyway.
+#
+# None of these is a mechanical part -- the switches, the FPC and the battery
+# connector are frozen at V2's coordinates and check_board.py asserts it.
+RELOCATE = [
+    ("C12", ("U1", "3"), "+3V3 bulk decoupling, hard against the module's 3V3 pad"),
+    ("C1", ("U1", "45"), "EN capacitor, beside the EN pad"),
+    ("R1", ("U1", "45"), "EN pull-up, beside the EN pad"),
+    ("R7", ("U6", "2"), "RTC_INT pull-up, beside the RTC's INT pin"),
+    ("Q5", ("M1", "2"), "motor driver, beside the motor pads"),
+    ("U2", ("Q4", "2"), "LDO, on its own input node"),
+    ("D4", ("Q4", "2"), "OR-ing diode, on the same node"),
+]
+RELOCATE_RADIUS_MM = 14.0
+# Past this, "nearest clear spot" stops being a good answer and wants a human.
+FAR_FROM_ANCHOR_MM = 5.0
 
 # How far from its preferred spot a small part may be nudged to find clear
 # space, and the step used while searching. Big parts (the module, the
@@ -176,17 +205,24 @@ def overlap_pairs(footprints):
     return pairs
 
 
-def free_spot(fp, preferred, occupied, edges):
+def pad_position(fp, padname):
+    for p in fp.Pads():
+        if p.GetPadName() == padname:
+            pos = p.GetPosition()
+            return pcbnew.ToMM(pos.x), pcbnew.ToMM(pos.y)
+    return None
+
+
+def free_spot(fp, preferred, occupied, edges, radius=None):
     """Nearest clear position to `preferred`, searched on a spiral grid.
 
-    Returns (x, y, moved_mm) or None if nothing within NUDGE_RADIUS_MM is
-    clear. Only used for the small parts: a resistor that has to shift 1mm to
+    Returns (x, y, moved_mm) or None if nothing within `radius` is clear. Only used for the small parts: a resistor that has to shift 1mm to
     stop overlapping its neighbour is not a design decision, but a connector
     that does not fit is.
     """
     px, py = preferred
     step = NUDGE_STEP_MM
-    rings = int(NUDGE_RADIUS_MM / step) + 1
+    rings = int((radius or NUDGE_RADIUS_MM) / step) + 1
     for ring in range(rings):
         offsets = [(0, 0)] if ring == 0 else [
             (dx * step, dy * step)
@@ -217,8 +253,12 @@ def main(argv):
     # their courtyards already overlap. Those are upstream's business, not
     # this board's, so the report below is a diff against the board as it
     # arrived, not an absolute count.
+    if not os.path.exists(BASELINE):
+        print("missing %s -- the overlap report needs V2's untouched layout "
+              "to diff against" % BASELINE, file=sys.stderr)
+        return 2
     baseline = overlap_pairs(
-        fp for fp in pcbnew.LoadBoard(BOARD).GetFootprints()
+        fp for fp in pcbnew.LoadBoard(BASELINE).GetFootprints()
         if not is_graphical(fp.GetReference()))
 
     # ---------------------------------------------------------------- delete
@@ -254,7 +294,7 @@ def main(argv):
     present = {fp.GetReference() for fp in kept}
 
     # ------------------------------------------------------------------- add
-    added, failed, nudged = [], [], []
+    added, failed, nudged, added_refs = [], [], [], set()
     to_nudge = []
     parked = 0
     for ref in sorted(comps):
@@ -292,6 +332,7 @@ def main(argv):
             parked += 1
             where = "PARKED off-board, needs placing"
         kept.append(fp)
+        added_refs.add(ref)
         added.append("%-4s %-26s %s" % (ref, comps[ref]["value"][:26], where))
 
     # --------------------------------------------------------------- nudge
@@ -318,6 +359,50 @@ def main(argv):
             fp.SetPosition(pt(spot[0], spot[1]))
             nudged.append("%-4s moved %.2fmm to (%.2f, %.2f)"
                           % (ref, spot[2], spot[0], spot[1]))
+
+    # ------------------------------------------------------------- relocate
+    # Everything the module and the USB-C displaced, moved to the nearest
+    # clear spot to the pad it serves.
+    relocated = []
+    for ref, (anchor_ref, anchor_pad), reason in RELOCATE:
+        fp = next((f for f in kept if f.GetReference() == ref), None)
+        anchor = next((f for f in kept if f.GetReference() == anchor_ref), None)
+        if fp is None or anchor is None:
+            relocated.append("%-4s skipped: %s not on the board"
+                             % (ref, ref if fp is None else anchor_ref))
+            continue
+        target = pad_position(anchor, anchor_pad)
+        if target is None:
+            relocated.append("%-4s skipped: %s has no pad %s"
+                             % (ref, anchor_ref, anchor_pad))
+            continue
+        others = [courtyard_box(o) for o in kept
+                  if o is not fp
+                  and not is_graphical(o.GetReference())
+                  and pcbnew.ToMM(o.GetPosition().x) < PARK_X - 5]
+        # Only move a part that is actually in trouble. Repositioning
+        # unconditionally would undo a human's deliberate placement every
+        # time this is re-run over a board someone has been working on.
+        here = courtyard_box(fp)
+        if not any(overlaps(here, other) for other in others):
+            relocated.append("%-4s left where it is, nothing overlapping it"
+                             % ref)
+            continue
+        spot = free_spot(fp, target, others, edges_box,
+                         radius=RELOCATE_RADIUS_MM)
+        if spot is None:
+            relocated.append("%-4s NO CLEAR SPOT within %.0fmm of %s.%s"
+                             % (ref, RELOCATE_RADIUS_MM, anchor_ref,
+                                anchor_pad))
+            continue
+        fp.SetPosition(pt(spot[0], spot[1]))
+        # "Nearest clear spot" is not the same as "electrically sensible". A
+        # decoupling cap several millimetres from its pad is decoupling
+        # nothing, so say so rather than let the distance hide in a number.
+        far = "  <-- FAR, review this" if spot[2] > FAR_FROM_ANCHOR_MM else ""
+        relocated.append("%-4s -> (%6.2f, %6.2f), %.2fmm from %s.%s -- %s%s"
+                         % (ref, spot[0], spot[1], spot[2], anchor_ref,
+                            anchor_pad, reason, far))
 
     # ------------------------------------------------------------------ nets
     by_ref = {fp.GetReference(): fp for fp in kept}
@@ -385,7 +470,15 @@ def main(argv):
                                          "   (footprint growth, ignorable)")
                  for pair, depth in sorted(new_pairs.items(),
                                            key=lambda kv: -kv[1])]
-    inherited = len(set(now) & set(baseline))
+    inherited_pairs = sorted(" <-> ".join(sorted(p)) for p in
+                             (set(now) & set(baseline)))
+    inherited = len(inherited_pairs)
+    # An overlap is only safely excusable as "V2 already had it" if this run
+    # left both parts alone. Where it replaced or moved one, the pair is
+    # listed for review rather than waved through under V2's name.
+    touched = set(PLACEMENT) | {r for r, _, _ in RELOCATE} | set(added_refs)
+    suspect = [pair for pair in inherited_pairs
+               if set(pair.split(" <-> ")) & touched]
 
     # ----------------------------------------------------------------- report
     def section(title, items, empty="none"):
@@ -400,10 +493,17 @@ def main(argv):
     section("replaced", replaced)
     section("added", added)
     section("nudged clear of neighbours", nudged)
+    section("relocated to the pad they serve", relocated)
     section("planes", planes)
     section("footprints that could not be loaded", failed)
     section("pads the netlist names but the board cannot match", unmatched)
     section("NEW courtyard overlaps -- these need a human", conflicts)
+    section("V2 also had these, but this run replaced or moved a part in "
+            "them -- confirm they are still V2's", suspect)
+    print("inherited from V2, both parts untouched: %s"
+          % ", ".join(p for p in inherited_pairs
+                      if not set(p.split(" <-> ")) & touched))
+    print()
     print("%d pad(s) assigned to %d net(s)" % (assigned, len(net_cache)))
     print("%d courtyard overlap(s) inherited from V2 and left alone"
           % inherited)
