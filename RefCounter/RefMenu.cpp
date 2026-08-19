@@ -461,6 +461,11 @@ void showBuzz() {
 // MENU steps forward through the fields and commits past the last one, BACK
 // steps back, UP and DOWN change the value under the cursor. The field being
 // edited blinks, which is what tells you where you are.
+//
+// Times out after MENU_TIMEOUT_MS with nothing pressed, and a timeout leaves
+// the clock exactly as it was. This screen repaints twice a second, so one
+// opened by accident and then left alone would otherwise hold the watch there
+// -- refreshing the panel the whole time -- until the battery went flat.
 void setTime(RefClock &refClock) {
   struct tm current;
   if (!refClock.localNow(current)) {
@@ -478,8 +483,11 @@ void setTime(RefClock &refClock) {
   int month  = current.tm_mon + 1;
   int day    = current.tm_mday;
 
-  int8_t field = SET_HOUR;
-  bool   blink = false;
+  int8_t field     = SET_HOUR;
+  bool   blink     = false;
+  // Only true on the MENU-past-last-field path below, so a timeout -- which
+  // also falls out of the loop -- can never reach the RTC write at the bottom.
+  bool   committed = false;
 
   claimButtons();
   display.setFullWindow();
@@ -488,20 +496,32 @@ void setTime(RefClock &refClock) {
   const int16_t leftX = 4;
   const int16_t rightX = DISPLAY_WIDTH - RefDisplay::DIGIT_PAIR_W - 4;
 
-  while (true) {
-    if (pressed(PIN_BTN_MENU)) {
+  uint32_t lastActivity = millis();
+  while (millis() - lastActivity < MENU_TIMEOUT_MS) {
+    const bool menuDown = pressed(PIN_BTN_MENU);
+    const bool backDown = pressed(PIN_BTN_BACK);
+    const bool upDown   = pressed(PIN_BTN_UP);
+    const bool downDown = pressed(PIN_BTN_DOWN);
+    // Any press counts as activity, even one that turns out to be inert (BACK
+    // on the first field): a user still working the buttons is not idle.
+    if (menuDown || backDown || upDown || downDown) {
+      lastActivity = millis();
+    }
+
+    if (menuDown) {
       field++;
       if (field > SET_DAY) {
+        committed = true;
         break;
       }
     }
-    if (pressed(PIN_BTN_BACK) && field != SET_HOUR) {
+    if (backDown && field != SET_HOUR) {
       field--;
     }
 
     blink = !blink;
 
-    const int delta = pressed(PIN_BTN_DOWN) ? 1 : (pressed(PIN_BTN_UP) ? -1 : 0);
+    const int delta = downDown ? 1 : (upDown ? -1 : 0);
     if (delta != 0) {
       blink = true; // never hide the field the user is actively changing
       switch (field) {
@@ -545,6 +565,10 @@ void setTime(RefClock &refClock) {
     display.display(true); // partial refresh
   }
 
+  if (!committed) {
+    return; // timed out part way through; the clock keeps the time it had
+  }
+
   struct tm t = {};
   t.tm_year   = 100 + year; // years since 1900
   t.tm_mon    = month - 1;
@@ -578,10 +602,9 @@ const char *customFieldLabel(int8_t f) {
 // Edit the Custom preset's five numbers. MENU steps forward through the fields
 // and commits past the last one, BACK steps back, UP and DOWN change the value
 // under the cursor, and the field being edited blinks -- the same interaction
-// as setTime above, deliberately. Unlike setTime, this one times out: it is
-// menu row 2, so an accidental open sits directly under where the menu opens,
-// and every other picker already bails after MENU_TIMEOUT_MS rather than
-// stranding the watch on a screen mid-game.
+// as setTime above, deliberately -- MENU_TIMEOUT_MS bail-out included, so a
+// screen opened by accident cannot strand the watch on it mid-game. This one
+// is menu row 2, directly under where the menu opens, so that matters here.
 //
 // Values are text rather than seven-segment digits: five labelled rows are far
 // more readable than five bare numbers, and it keeps new segment geometry out

@@ -184,6 +184,13 @@ cannot strand you mid-game. Nine entries no longer fit the panel at once, so
 the list scrolls a seven-row window, keeping the highlighted entry in view the
 same way the time zone picker already does.
 
+Every screen the menu opens times out on the same rule, and a timeout always
+**discards**: Set Time leaves the clock alone, Edit Custom leaves the stored
+preset alone, and the two pickers leave their stored choice alone. Only
+pressing MENU past the last field commits. This matters more than it sounds —
+these screens repaint about twice a second, so one left open would otherwise
+hold the panel refreshing until the battery went flat.
+
 | Entry | What it does |
 | --- | --- |
 | Sport: *name* | Pick one of the seven presets from a scrolling list |
