@@ -10,27 +10,33 @@
 // reference firmware, sqfmi/Watchy (MIT licence), by way of credit. No code
 // from that project is used here.
 //
-// The revision is selected by the build: ARDUINO_WATCHY_V10 / _V15 / _V20 for
-// the ESP32 boards, ARDUINO_ESP32S3_DEV for V3, ARDUINO_ESP32C6_DEV for this
-// repo's own ESP32-C6-MINI-1 board. See platformio.ini.
+// The revision is selected by the build: ARDUINO_WATCHY_V20 for the Watchy
+// V2.0 (ESP32), ARDUINO_ESP32C6_DEV for this repo's own ESP32-C6-MINI-1
+// board. See platformio.ini.
 // ---------------------------------------------------------------------------
 
 #include <Arduino.h>
 
 // PlatformIO sets the revision from platformio.ini. The Arduino IDE has no
-// build-flag field, so IDE users uncomment the line matching their hardware
-// here -- it has to live in this header, which every source file includes,
-// rather than in the .ino, which only sets it for itself.
+// build-flag field, so IDE users on a V2.0 uncomment the line below -- it has
+// to live in this header, which every source file includes, rather than in
+// the .ino, which only sets it for itself.
 //
-// #define ARDUINO_WATCHY_V10
-// #define ARDUINO_WATCHY_V15
 // #define ARDUINO_WATCHY_V20
 //
-// V3 and the C6 board need nothing: selecting an ESP32-S3 or ESP32-C6 board
-// defines ARDUINO_ESP32S3_DEV / ARDUINO_ESP32C6_DEV.
+// The C6 board needs nothing: selecting an ESP32-C6 board defines
+// ARDUINO_ESP32C6_DEV.
+
+// V1.0 and V1.5 are no longer supported. Their up button and battery tap sat
+// on other pins than V2.0's -- 32/33 on V1.0 and 32/35 on V1.5, against
+// 35/34 here -- so quietly building the V2.0 map for one of them would read
+// the battery off the wrong pin and never see the up button at all. A stale
+// build flag or an old #define left in this file therefore stops the build.
+#if defined(ARDUINO_WATCHY_V10) || defined(ARDUINO_WATCHY_V15)
+#error "Watchy V1.0, V1.5 and V3 are no longer supported; build watchy_v2 or watchy_c6"
+#endif
 
 #if !defined(ARDUINO_ESP32S3_DEV) && !defined(ARDUINO_ESP32C6_DEV) &&          \
-    !defined(ARDUINO_WATCHY_V10) && !defined(ARDUINO_WATCHY_V15) &&            \
     !defined(ARDUINO_WATCHY_V20)
 #warning "No Watchy revision defined; assuming V2.0"
 #define ARDUINO_WATCHY_V20
@@ -124,7 +130,7 @@
 #define BATT_DIVIDER 2.0f
 
 #else
-// --- V1.0 / V1.5 / V2.0 (ESP32) --------------------------------------------
+// --- Watchy V2.0 (ESP32) ---------------------------------------------------
 #define PIN_I2C_SDA 21
 #define PIN_I2C_SCL 22
 
@@ -134,6 +140,7 @@
 #define PIN_BTN_MENU 26
 #define PIN_BTN_BACK 25
 #define PIN_BTN_DOWN 4
+#define PIN_BTN_UP   35
 
 #define PIN_DISPLAY_CS   5
 #define PIN_DISPLAY_RST  9
@@ -141,18 +148,7 @@
 #define PIN_DISPLAY_BUSY 19
 
 #define PIN_VIB_MOTOR 13
-
-// The up button and the battery tap moved between revisions.
-#if defined(ARDUINO_WATCHY_V10)
-#define PIN_BTN_UP   32
-#define PIN_BATT_ADC 33
-#elif defined(ARDUINO_WATCHY_V15)
-#define PIN_BTN_UP   32
-#define PIN_BATT_ADC 35
-#else // ARDUINO_WATCHY_V20
-#define PIN_BTN_UP   35
-#define PIN_BATT_ADC 34
-#endif
+#define PIN_BATT_ADC  34
 
 // Buttons pull their pin high when pressed.
 #define BTN_PRESSED_LEVEL          HIGH
