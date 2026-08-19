@@ -1,0 +1,30 @@
+Quantity,Value,Footprint,Library,Designators
+1,JST 1.25mm battery connector,1.25T-2PWT (Molex 532610271),footprints,J3
+1,FPC24 0.5mm ZIF,24_Pins_0.5mm_Pitch_ZIF_Connector_UP,footprints,J1
+2,100nF,C_0402_1005Metric,Capacitor_SMD,"C15,C16"
+1,4.7uF,C_0402_1005Metric,Capacitor_SMD,C11
+2,100nF,C_0603_1608Metric,Capacitor_SMD,"C1,C14"
+7,1uF/50V,C_0603_1608Metric,Capacitor_SMD,"C2,C5,C6,C7,C8,C9,C10"
+3,4.7uF/50V,C_0805_2012Metric,Capacitor_SMD,"C3,C4,C12"
+4,MBR0530 Schottky,D_SOD-123,Diode_SMD,"D1,D2,D3,D4"
+1,1N4001,D_SOD-123F,Diode_SMD,D6
+1,ESP32-S3-MINI-1,ESP32-S3-MINI-1,footprints,U1
+4,Side tactile switch,K2-1114SA-A4SW-06,footprints,"SW1,SW2,SW3,SW4"
+1,LED (charge status),LED_0603_1608Metric,LED_SMD,D5
+1,10uH 1A,L_Taiyo-Yuden_NR-40xx,Inductor_SMD,L1
+1,Vibration motor pads,Motor_Header,footprints,M1
+1,RV-3028-C7 RTC,RV-3028-C7,footprints,U6
+1,100k,R_0402_1005Metric,Resistor_SMD,R20
+6,10k,R_0402_1005Metric,Resistor_SMD,"R1,R7,R8,R14,R15,R23"
+2,1M,R_0402_1005Metric,Resistor_SMD,"R12,R13"
+2,1k,R_0402_1005Metric,Resistor_SMD,"R16,R17"
+1,3R,R_0402_1005Metric,Resistor_SMD,R9
+2,4.7k,R_0402_1005Metric,Resistor_SMD,"R2,R3"
+2,5.1k,R_0402_1005Metric,Resistor_SMD,"R21,R22"
+1,AO3400A N-channel MOSFET,SOT-23,Package_TO_SOT_SMD,Q1
+1,CJ2301 P-channel MOSFET,SOT-23,Package_TO_SOT_SMD,Q4
+1,S8050 NPN,SOT-23,Package_TO_SOT_SMD,Q5
+1,ME6211C33M5G-N 3.3V LDO,SOT-23-5,Package_TO_SOT_SMD,U2
+1,TP4054 Li-ion charger,SOT-23-5,Package_TO_SOT_SMD,U5
+1,USBLC6-2P6 USB ESD array,SOT-666,Package_TO_SOT_SMD,U3
+1,"USB-C 2.0 receptacle, 16 pin",USB_C_Receptacle_XKB_U262-16XN-4BVC11,Connector_USB,J2

@@ -1,0 +1,14 @@
+# atopile build output; regenerate with ./checks/run.sh
+build/
+.ato/
+ato-lock.yaml
+
+# KiCad working files
+*-backups/
+*.kicad_prl
+*.kicad_pcb-bak
+fp-info-cache
+
+# Python
+__pycache__/
+*.pyc

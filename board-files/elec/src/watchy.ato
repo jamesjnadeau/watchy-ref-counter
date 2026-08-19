@@ -1,0 +1,581 @@
+# Watchy Ref - ESP32-S3-MINI-1 / RV-3028-C7 board.
+#
+# Derived from sqfmi/watchy-hardware v2.0 (MIT). The e-paper block, the
+# TP4054 charger, the VBUS/battery OR-ing, the LDO, the motor driver and the
+# connectors are transcribed pad-for-pad from V2's netlist; the MCU, the RTC,
+# the USB connector and the battery divider are the changes this board exists
+# to make. Rationale for each is in
+# docs/superpowers/specs/2026-08-18-s3-mini-rv3028-board.md.
+#
+# Designators are pinned to V2's for every carried-over part, so that
+# importing this netlist into V2's layout reuses the existing placement
+# instead of scattering everything at the origin. New parts take the next
+# free numbers: R21-R23, C15-C16, TP7-TP9.
+#
+# NEVER FABRICATED, NEVER POWERED, NEVER TESTED.
+
+from "parts.ato" import R_3R, R_1k, R_4k7, R_5k1, R_10k, R_100k, R_1M
+from "parts.ato" import C_100nF_0603, C_100nF_0402, C_1uF_0603, C_4u7_0805, C_4u7_0402
+from "parts.ato" import D_MBR0530, D_1N4001, D_LED
+from "parts.ato" import Q_AO3400A, Q_CJ2301, Q_S8050
+from "parts.ato" import L_10uH, U_ME6211C33, U_TP4054
+from "parts.ato" import J_FPC24, J_Battery, M_Vibration, SW_Tactile, TestPoint
+from "mcu.ato" import ESP32S3MINI1
+from "rtc.ato" import RV3028C7
+from "usb.ato" import USBCReceptacle16P, USBLC6_2P6
+
+
+module WatchyRefS3:
+    """Watchy-compatible watch board: ESP32-S3-MINI-1, RV-3028-C7, USB-C."""
+
+    # ---------------------------------------------------------------- rails
+    signal GND
+    GND.override_net_name = "GND"
+    signal P3V3
+    P3V3.override_net_name = "+3V3"
+    signal VBATT
+    VBATT.override_net_name = "+BATT"
+    signal VBUS
+    VBUS.override_net_name = "VBUS"
+    # LDO input: whichever of VBUS or +BATT is available.
+    signal VSYS
+    VSYS.override_net_name = "VSYS"
+
+    # ------------------------------------------------------------- MCU nets
+    signal BTN_MENU
+    BTN_MENU.override_net_name = "BTN_MENU"
+    signal BTN_BACK
+    BTN_BACK.override_net_name = "BTN_BACK"
+    signal BTN_UP
+    BTN_UP.override_net_name = "BTN_UP"
+    signal BTN_DOWN
+    BTN_DOWN.override_net_name = "BTN_DOWN"
+    signal RTC_INT
+    RTC_INT.override_net_name = "RTC_INT"
+    signal BATT_ADC
+    BATT_ADC.override_net_name = "BATT_ADC"
+    signal SDA
+    SDA.override_net_name = "SDA"
+    signal SCL
+    SCL.override_net_name = "SCL"
+    signal VIB_PWM
+    VIB_PWM.override_net_name = "VIB_PWM"
+    signal EN
+    EN.override_net_name = "EN"
+    signal TP_BOOT
+    TP_BOOT.override_net_name = "TP_BOOT"
+    signal TP_TX
+    TP_TX.override_net_name = "TP_TX"
+    signal TP_RX
+    TP_RX.override_net_name = "TP_RX"
+
+    # ------------------------------------------------------------- USB nets
+    signal USB_DP
+    USB_DP.override_net_name = "USB_DP"
+    signal USB_DM
+    USB_DM.override_net_name = "USB_DM"
+    signal CC1
+    CC1.override_net_name = "CC1"
+    signal CC2
+    CC2.override_net_name = "CC2"
+
+    # ---------------------------------------------------------- e-paper nets
+    signal EPD_SCK
+    EPD_SCK.override_net_name = "EPD_SCK"
+    signal EPD_MOSI
+    EPD_MOSI.override_net_name = "EPD_MOSI"
+    signal EPD_CS
+    EPD_CS.override_net_name = "EPD_CS"
+    signal EPD_DC
+    EPD_DC.override_net_name = "EPD_DC"
+    signal EPD_RST
+    EPD_RST.override_net_name = "EPD_RST"
+    signal EPD_BUSY
+    EPD_BUSY.override_net_name = "EPD_BUSY"
+    # Panel charge pump, carried over from V2 unchanged.
+    signal GDR
+    GDR.override_net_name = "GDR"
+    signal RESE
+    RESE.override_net_name = "RESE"
+    signal PREVGH
+    PREVGH.override_net_name = "PREVGH"
+    signal PREVGL
+    PREVGL.override_net_name = "PREVGL"
+    signal CP_POS
+    CP_POS.override_net_name = "CP_POS"
+    signal CP_NEG
+    CP_NEG.override_net_name = "CP_NEG"
+    # Panel rail decoupling nodes, named for the FPC pin they land on.
+    signal EPD_C5
+    EPD_C5.override_net_name = "EPD_C5"
+    signal EPD_C18
+    EPD_C18.override_net_name = "EPD_C18"
+    signal EPD_C20
+    EPD_C20.override_net_name = "EPD_C20"
+    signal EPD_C22
+    EPD_C22.override_net_name = "EPD_C22"
+    signal EPD_C24
+    EPD_C24.override_net_name = "EPD_C24"
+
+    # ------------------------------------------------------- misc local nets
+    signal RTC_CLKOUT
+    RTC_CLKOUT.override_net_name = "RTC_CLKOUT"
+    signal MOTOR_DRV
+    MOTOR_DRV.override_net_name = "MOTOR_DRV"
+    signal VIB_BASE
+    VIB_BASE.override_net_name = "VIB_BASE"
+    signal LED_A
+    LED_A.override_net_name = "LED_A"
+    signal CHRG
+    CHRG.override_net_name = "CHRG"
+    signal PROG
+    PROG.override_net_name = "PROG"
+
+    # =====================================================================
+    # MCU - ESP32-S3-MINI-1
+    # =====================================================================
+    # The pin map is the spec's, verbatim. Buttons and RTC_INT all sit on
+    # IO4-IO8, which are RTC GPIOs, so one ESP_EXT1_WAKEUP_ANY_LOW mask
+    # covers five wake sources. BATT_ADC is on IO9 = ADC1_CH8; ADC2 is
+    # unusable while WiFi is running. No button touches a strapping pin.
+    u1 = new ESP32S3MINI1
+    u1.designator = "U1"
+
+    u1.P3V3 ~ P3V3
+    u1.GND ~ GND
+    u1.EN ~ EN
+
+    u1.IO4 ~ BTN_MENU
+    u1.IO5 ~ BTN_BACK
+    u1.IO6 ~ BTN_UP
+    u1.IO7 ~ BTN_DOWN
+    u1.IO8 ~ RTC_INT
+    u1.IO9 ~ BATT_ADC
+    u1.IO11 ~ SCL
+    u1.IO12 ~ SDA
+    u1.IO17 ~ VIB_PWM
+    u1.IO19 ~ USB_DM
+    u1.IO20 ~ USB_DP
+    u1.IO47 ~ EPD_SCK
+    u1.IO33 ~ EPD_CS
+    u1.IO34 ~ EPD_DC
+    u1.IO48 ~ EPD_MOSI
+    u1.IO35 ~ EPD_RST
+    u1.IO36 ~ EPD_BUSY
+
+    # Strapping pin IO0 carries nothing but its pull-up and a test pad, so a
+    # held or dirty button can never drop the watch into the bootloader.
+    u1.IO0 ~ TP_BOOT
+    u1.TXD0 ~ TP_TX
+    u1.RXD0 ~ TP_RX
+
+    # IO1, IO2, IO3, IO10, IO13-IO16, IO18, IO21, IO26, IO37-IO42, IO45 and
+    # IO46 are deliberately left unconnected. IO15/IO16 are the XTAL_32K pair,
+    # unused because the RTC's alarm is the wake source (spec D5). IO3, IO45
+    # and IO46 are strapping pins with the right internal defaults.
+
+    # EN reset network, carried over from V2.
+    r1 = new R_10k
+    r1.designator = "R1"
+    r1.1 ~ P3V3
+    r1.2 ~ EN
+
+    c1 = new C_100nF_0603
+    c1.designator = "C1"
+    c1.1 ~ EN
+    c1.2 ~ GND
+
+    # GPIO0 pull-up. Short TP1 to ground at reset to force download mode.
+    r23 = new R_10k
+    r23.designator = "R23"
+    r23.1 ~ P3V3
+    r23.2 ~ TP_BOOT
+
+    # =====================================================================
+    # Buttons - active low
+    # =====================================================================
+    # V1-V2 buttons are active high because the original ESP32's ext1 only
+    # offers ALL_LOW or ANY_HIGH. The S3 adds ESP_EXT1_WAKEUP_ANY_LOW, so
+    # these go to ground and lean on the S3's internal pull-ups; V2's four
+    # external pull-downs (R4, R5, R6, R10) are deleted.
+    #
+    # Roles follow board.h and V2's physical positions, which are confirmed
+    # against the V2 layout: seen from the display side, SW2 is top left,
+    # SW1 bottom left, SW3 top right, SW4 bottom right. MENU is the bottom
+    # left button and BACK the top left one, which is the opposite of what
+    # the names suggest.
+    sw1 = new SW_Tactile
+    sw1.designator = "SW1"
+    sw1.1 ~ GND
+    sw1.2 ~ BTN_MENU
+
+    sw2 = new SW_Tactile
+    sw2.designator = "SW2"
+    sw2.1 ~ GND
+    sw2.2 ~ BTN_BACK
+
+    sw3 = new SW_Tactile
+    sw3.designator = "SW3"
+    sw3.1 ~ GND
+    sw3.2 ~ BTN_UP
+
+    sw4 = new SW_Tactile
+    sw4.designator = "SW4"
+    sw4.1 ~ GND
+    sw4.2 ~ BTN_DOWN
+
+    # =====================================================================
+    # RTC - RV-3028-C7
+    # =====================================================================
+    # VDD on +BATT keeps the clock running independently of the LDO, which is
+    # the whole reason this board exists. VBACKUP is tied to GND rather than
+    # to a rail: in direct switching mode the part runs from whichever supply
+    # is higher and puts SDA into high impedance in the backup state, which on
+    # a board whose battery is always the highest rail would break I2C. If a
+    # supercap is ever fitted, VBACKUP is where it goes.
+    u6 = new RV3028C7
+    u6.designator = "U6"
+    u6.VDD ~ VBATT
+    u6.VSS ~ GND
+    u6.VBACKUP ~ GND
+    u6.EVI ~ GND
+    u6.SCL ~ SCL
+    u6.SDA ~ SDA
+    u6.INT ~ RTC_INT
+    u6.CLKOUT ~ RTC_CLKOUT
+
+    c15 = new C_100nF_0402
+    c15.designator = "C15"
+    c15.1 ~ VBATT
+    c15.2 ~ GND
+
+    # I2C and interrupt pull-ups go to +3V3, NEVER +BATT. The RV-3028 runs
+    # from +BATT at up to 4.2V and its VIH of 0.7 x VDD = 2.94V is cleared by
+    # a 3.3V bus, while the S3's inputs never see more than 3.3V. Pulling the
+    # bus to +BATT instead would put 4.2V on S3 pins. V2 had R7 on +BATT.
+    r2 = new R_4k7
+    r2.designator = "R2"
+    r2.1 ~ P3V3
+    r2.2 ~ SCL
+
+    r3 = new R_4k7
+    r3.designator = "R3"
+    r3.1 ~ P3V3
+    r3.2 ~ SDA
+
+    r7 = new R_10k
+    r7.designator = "R7"
+    r7.1 ~ P3V3
+    r7.2 ~ RTC_INT
+
+    # =====================================================================
+    # USB-C and ESD
+    # =====================================================================
+    j2 = new USBCReceptacle16P
+    j2.designator = "J2"
+    j2.VBUS ~ VBUS
+    j2.GND ~ GND
+    j2.SHIELD ~ GND
+    j2.DP ~ USB_DP
+    j2.DM ~ USB_DM
+    j2.CC1 ~ CC1
+    j2.CC2 ~ CC2
+    # SBU1 and SBU2 are left unconnected; this is a USB 2.0 device.
+
+    # One 5.1k per CC pin. Without them a C-to-C cable delivers no power at
+    # all, and a single shared resistor advertises the wrong current and
+    # breaks reversibility.
+    r21 = new R_5k1
+    r21.designator = "R21"
+    r21.1 ~ CC1
+    r21.2 ~ GND
+
+    r22 = new R_5k1
+    r22.designator = "R22"
+    r22.1 ~ CC2
+    r22.2 ~ GND
+
+    # U3 was V2's CP2102. The S3 enumerates natively, so the bridge and its
+    # UMH3N auto-reset pair are gone and the designator is reused for the ESD
+    # array. Place it hard against the connector in layout: ESD protection
+    # downstream of what it protects is decoration.
+    u3 = new USBLC6_2P6
+    u3.designator = "U3"
+    u3.IO1 ~ USB_DP
+    u3.IO2 ~ USB_DM
+    u3.VBUS ~ VBUS
+    u3.GND ~ GND
+
+    # =====================================================================
+    # Power - carried over from V2 verbatim
+    # =====================================================================
+    j3 = new J_Battery
+    j3.designator = "J3"
+    j3.1 ~ VBATT
+    j3.2 ~ GND
+
+    # TP4054 charger: 1 CHRG, 2 GND, 3 BAT, 4 VCC, 5 PROG.
+    u5 = new U_TP4054
+    u5.designator = "U5"
+    u5.1 ~ CHRG
+    u5.2 ~ GND
+    u5.3 ~ VBATT
+    u5.4 ~ VBUS
+    u5.5 ~ PROG
+
+    r15 = new R_10k
+    r15.designator = "R15"
+    r15.1 ~ GND
+    r15.2 ~ PROG
+
+    r16 = new R_1k
+    r16.designator = "R16"
+    r16.1 ~ LED_A
+    r16.2 ~ CHRG
+
+    d5 = new D_LED
+    d5.designator = "D5"
+    d5.1 ~ LED_A
+    d5.2 ~ VBUS
+
+    # VBUS/battery OR-ing into the LDO input.
+    q4 = new Q_CJ2301
+    q4.designator = "Q4"
+    q4.1 ~ VBUS
+    q4.2 ~ VSYS
+    q4.3 ~ VBATT
+
+    d4 = new D_MBR0530
+    d4.designator = "D4"
+    d4.1 ~ VSYS
+    d4.2 ~ VBUS
+
+    # ME6211C33M5G-N: 1 VIN, 2 GND, 3 EN, 4 NC, 5 VOUT. EN is tied to VIN.
+    u2 = new U_ME6211C33
+    u2.designator = "U2"
+    u2.1 ~ VSYS
+    u2.2 ~ GND
+    u2.3 ~ VSYS
+    u2.5 ~ P3V3
+
+    c11 = new C_4u7_0402
+    c11.designator = "C11"
+    c11.1 ~ GND
+    c11.2 ~ VBUS
+
+    c4 = new C_4u7_0805
+    c4.designator = "C4"
+    c4.1 ~ P3V3
+    c4.2 ~ GND
+
+    c12 = new C_4u7_0805
+    c12.designator = "C12"
+    c12.1 ~ P3V3
+    c12.2 ~ GND
+
+    c7 = new C_1uF_0603
+    c7.designator = "C7"
+    c7.1 ~ P3V3
+    c7.2 ~ GND
+
+    r14 = new R_10k
+    r14.designator = "R14"
+    r14.1 ~ VBUS
+    r14.2 ~ GND
+
+    # =====================================================================
+    # Battery sense - 1M/1M
+    # =====================================================================
+    # V2's two 100k draw 4.2V/200k = 21uA continuously, about 15mAh a month
+    # out of a 200mAh cell. 1M/1M draws 2.1uA for the same 2:1 ratio, so
+    # firmware's BATT_DIVIDER 2.0f stays correct. The cost is source
+    # impedance: the ADC must discard its first reading after the mux settles.
+    r12 = new R_1M
+    r12.designator = "R12"
+    r12.1 ~ VBATT
+    r12.2 ~ BATT_ADC
+
+    r13 = new R_1M
+    r13.designator = "R13"
+    r13.1 ~ BATT_ADC
+    r13.2 ~ GND
+
+    c16 = new C_100nF_0402
+    c16.designator = "C16"
+    c16.1 ~ BATT_ADC
+    c16.2 ~ GND
+
+    # =====================================================================
+    # E-paper panel and its charge pump - carried over from V2 verbatim
+    # =====================================================================
+    j1 = new J_FPC24
+    j1.designator = "J1"
+    j1.2 ~ GDR
+    j1.3 ~ RESE
+    j1.5 ~ EPD_C5
+    j1.8 ~ GND
+    j1.9 ~ EPD_BUSY
+    j1.10 ~ EPD_RST
+    j1.11 ~ EPD_DC
+    j1.12 ~ EPD_CS
+    j1.13 ~ EPD_SCK
+    j1.14 ~ EPD_MOSI
+    j1.15 ~ P3V3
+    j1.16 ~ P3V3
+    j1.17 ~ GND
+    j1.18 ~ EPD_C18
+    j1.20 ~ EPD_C20
+    j1.21 ~ PREVGH
+    j1.22 ~ EPD_C22
+    j1.23 ~ PREVGL
+    j1.24 ~ EPD_C24
+    # Pins 1, 4, 6, 7, 19 and the shell M are unconnected in V2 as well.
+
+    # AO3400A: 1 gate, 2 source, 3 drain.
+    q1 = new Q_AO3400A
+    q1.designator = "Q1"
+    q1.1 ~ GDR
+    q1.2 ~ RESE
+    q1.3 ~ CP_POS
+
+    r8 = new R_10k
+    r8.designator = "R8"
+    r8.1 ~ GDR
+    r8.2 ~ GND
+
+    r9 = new R_3R
+    r9.designator = "R9"
+    r9.1 ~ GND
+    r9.2 ~ RESE
+
+    l1 = new L_10uH
+    l1.designator = "L1"
+    l1.1 ~ CP_POS
+    l1.2 ~ P3V3
+
+    c3 = new C_4u7_0805
+    c3.designator = "C3"
+    c3.1 ~ CP_NEG
+    c3.2 ~ CP_POS
+
+    d1 = new D_MBR0530
+    d1.designator = "D1"
+    d1.1 ~ CP_NEG
+    d1.2 ~ PREVGL
+
+    d2 = new D_MBR0530
+    d2.designator = "D2"
+    d2.1 ~ GND
+    d2.2 ~ CP_NEG
+
+    d3 = new D_MBR0530
+    d3.designator = "D3"
+    d3.1 ~ PREVGH
+    d3.2 ~ CP_POS
+
+    c5 = new C_1uF_0603
+    c5.designator = "C5"
+    c5.1 ~ PREVGH
+    c5.2 ~ GND
+
+    c2 = new C_1uF_0603
+    c2.designator = "C2"
+    c2.1 ~ EPD_C5
+    c2.2 ~ GND
+
+    c6 = new C_1uF_0603
+    c6.designator = "C6"
+    c6.1 ~ EPD_C18
+    c6.2 ~ GND
+
+    c8 = new C_1uF_0603
+    c8.designator = "C8"
+    c8.1 ~ EPD_C20
+    c8.2 ~ GND
+
+    c9 = new C_1uF_0603
+    c9.designator = "C9"
+    c9.1 ~ EPD_C22
+    c9.2 ~ GND
+
+    c10 = new C_1uF_0603
+    c10.designator = "C10"
+    c10.1 ~ EPD_C24
+    c10.2 ~ GND
+
+    r20 = new R_100k
+    r20.designator = "R20"
+    r20.1 ~ P3V3
+    r20.2 ~ EPD_RST
+
+    # =====================================================================
+    # Vibration motor - carried over from V2 verbatim
+    # =====================================================================
+    m1 = new M_Vibration
+    m1.designator = "M1"
+    m1.1 ~ P3V3
+    m1.2 ~ MOTOR_DRV
+
+    # S8050: 1 base, 2 emitter, 3 collector.
+    q5 = new Q_S8050
+    q5.designator = "Q5"
+    q5.1 ~ VIB_BASE
+    q5.2 ~ GND
+    q5.3 ~ MOTOR_DRV
+
+    r17 = new R_1k
+    r17.designator = "R17"
+    r17.1 ~ VIB_BASE
+    r17.2 ~ VIB_PWM
+
+    d6 = new D_1N4001
+    d6.designator = "D6"
+    d6.1 ~ P3V3
+    d6.2 ~ MOTOR_DRV
+
+    c14 = new C_100nF_0603
+    c14.designator = "C14"
+    c14.1 ~ P3V3
+    c14.2 ~ MOTOR_DRV
+
+    # =====================================================================
+    # Test points
+    # =====================================================================
+    # TP7 and TP8 are new. The S3's serial port only exists while firmware
+    # runs, so when firmware is wedged a USB-serial dongle on these pads plus
+    # TP5/TP6 is the only console left.
+    tp1 = new TestPoint
+    tp1.designator = "TP1"
+    tp1.1 ~ TP_BOOT
+
+    tp2 = new TestPoint
+    tp2.designator = "TP2"
+    tp2.1 ~ SCL
+
+    tp3 = new TestPoint
+    tp3.designator = "TP3"
+    tp3.1 ~ SDA
+
+    tp4 = new TestPoint
+    tp4.designator = "TP4"
+    tp4.1 ~ P3V3
+
+    tp5 = new TestPoint
+    tp5.designator = "TP5"
+    tp5.1 ~ GND
+
+    tp6 = new TestPoint
+    tp6.designator = "TP6"
+    tp6.1 ~ GND
+
+    tp7 = new TestPoint
+    tp7.designator = "TP7"
+    tp7.1 ~ TP_TX
+
+    tp8 = new TestPoint
+    tp8.designator = "TP8"
+    tp8.1 ~ TP_RX
+
+    tp9 = new TestPoint
+    tp9.designator = "TP9"
+    tp9.1 ~ RTC_CLKOUT

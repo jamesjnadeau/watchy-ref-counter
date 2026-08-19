@@ -1,0 +1,93 @@
+# ESP32-S3-MINI-1 module.
+#
+# Pad numbers are from the ESP32-S3-MINI-1 datasheet Table 3-1, reproduced in
+# docs/superpowers/specs/2026-08-18-s3-mini-rv3028-board.md. 65 pads; GND is
+# 1, 2, 42, 43 and 46-65.
+#
+# Order the plain ESP32-S3-MINI-1 (embedded 8MB quad flash, no PSRAM), NOT the
+# -N4R2 variant: that one consumes IO26 for PSRAM.
+#
+# The footprint is Espressif's own, from github.com/espressif/kicad-libraries
+# (CC-BY-SA 4.0, see vendor/). It carries an "antenna keepout" zone on *.Cu
+# that forbids tracks, vias, pads and copper pour on every layer, which is
+# what the spec's antenna risk asks for.
+
+component ESP32S3MINI1:
+    designator_prefix = "U"
+    footprint = "footprints:ESP32-S3-MINI-1"
+    package = "ESP32-S3-MINI-1"
+    mpn = "ESP32-S3-MINI-1"
+    value = "ESP32-S3-MINI-1"
+    description = "ESP32-S3-MINI-1"
+
+    # Power and control
+    signal P3V3 ~ pin 3
+    signal EN ~ pin 45
+
+    # GPIO, named by the datasheet's IO number
+    signal IO0 ~ pin 4
+    signal IO1 ~ pin 5
+    signal IO2 ~ pin 6
+    signal IO3 ~ pin 7
+    signal IO4 ~ pin 8
+    signal IO5 ~ pin 9
+    signal IO6 ~ pin 10
+    signal IO7 ~ pin 11
+    signal IO8 ~ pin 12
+    signal IO9 ~ pin 13
+    signal IO10 ~ pin 14
+    signal IO11 ~ pin 15
+    signal IO12 ~ pin 16
+    signal IO13 ~ pin 17
+    signal IO14 ~ pin 18
+    signal IO15 ~ pin 19
+    signal IO16 ~ pin 20
+    signal IO17 ~ pin 21
+    signal IO18 ~ pin 22
+    signal IO19 ~ pin 23
+    signal IO20 ~ pin 24
+    signal IO21 ~ pin 25
+    signal IO26 ~ pin 26
+    signal IO47 ~ pin 27
+    signal IO33 ~ pin 28
+    signal IO34 ~ pin 29
+    signal IO48 ~ pin 30
+    signal IO35 ~ pin 31
+    signal IO36 ~ pin 32
+    signal IO37 ~ pin 33
+    signal IO38 ~ pin 34
+    signal IO39 ~ pin 35
+    signal IO40 ~ pin 36
+    signal IO41 ~ pin 37
+    signal IO42 ~ pin 38
+    signal TXD0 ~ pin 39
+    signal RXD0 ~ pin 40
+    signal IO45 ~ pin 41
+    signal IO46 ~ pin 44
+
+    # Ground. Every one of these has to reach the plane; the module's thermal
+    # pads are not optional decoration.
+    signal GND ~ pin 1
+    GND ~ pin 2
+    GND ~ pin 42
+    GND ~ pin 43
+    GND ~ pin 46
+    GND ~ pin 47
+    GND ~ pin 48
+    GND ~ pin 49
+    GND ~ pin 50
+    GND ~ pin 51
+    GND ~ pin 52
+    GND ~ pin 53
+    GND ~ pin 54
+    GND ~ pin 55
+    GND ~ pin 56
+    GND ~ pin 57
+    GND ~ pin 58
+    GND ~ pin 59
+    GND ~ pin 60
+    GND ~ pin 61
+    GND ~ pin 62
+    GND ~ pin 63
+    GND ~ pin 64
+    GND ~ pin 65
