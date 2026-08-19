@@ -36,5 +36,21 @@ mkdir -p fab
 python3 checks/make_bom.py build/default.net fab/BOM.csv
 
 echo
+echo "=== board"
+# pcbnew ships with KiCad and is bound to the interpreter KiCad was built
+# against, which is usually not the one on PATH.
+PCBNEW_PY=""
+for py in /usr/bin/python3.12 /usr/bin/python3.11 /usr/bin/python3 python3; do
+  if command -v "$py" >/dev/null 2>&1 && "$py" -c "import pcbnew" 2>/dev/null; then
+    PCBNEW_PY="$py"; break
+  fi
+done
+if [ -n "$PCBNEW_PY" ]; then
+  "$PCBNEW_PY" scripts/check_board.py 2>&1 | grep -vE "memory leak|Zone fills|^Warning"
+else
+  echo "   skipped: no interpreter with pcbnew. Install KiCad to check the layout."
+fi
+
+echo
 echo "=== not checked here"
 sed -n '/^- /p' UNVERIFIED.md

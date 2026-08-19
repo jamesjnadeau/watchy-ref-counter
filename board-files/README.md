@@ -38,7 +38,9 @@ board-files/
   elec/layout/default/              the PCB (see "Layout" below)
   checks/netlist_check.py           design assertions against the netlist
   checks/make_bom.py                fab BOM generator
-  checks/run.sh                     build, assert, generate
+  checks/run.sh                     build, assert, generate, check the board
+  scripts/apply_netlist.py          netlist -> PCB, headless (mutates the board)
+  scripts/check_board.py            asserts the PCB matches the netlist
   fab/BOM.csv                       generated, committed
   vendor/                           upstream licence notices
 ```
@@ -71,8 +73,19 @@ compiler can see:
 | V2 blocks carried over | any drift across the 106 pads of the 43 parts transcribed from V2 |
 | deleted parts | the PICO-D4, CP2102, BMA423, PCF8563, crystal or antenna creeping back |
 
-Each of these was mutation-tested: the netlist was deliberately broken in the
-way the check describes, and the check caught it.
+And on the board (`scripts/check_board.py`):
+
+| Check | What it catches |
+| --- | --- |
+| components | a netlist part with no footprint, or a footprint the netlist does not name |
+| nets | any pad on the wrong net, or on a net where the netlist says nothing |
+| mechanical | the four switches, the FPC and the battery connector drifting off V2's coordinates |
+| stackup | the board falling back to 2 layers, or a missing GND / +3V3 plane |
+| antenna | the module's keepout allowing pour, or not overhanging the board edge |
+
+Both sets were mutation-tested: the netlist or the board was deliberately
+broken in the way each check describes, and the check caught it. A check that
+cannot fail is not a check.
 
 **What is not checked:** ERC and DRC. `kicad-cli sch erc` and `pcb drc` need
 KiCad 8 or newer, and the newest version installable in the environment this
@@ -80,30 +93,51 @@ was built in is 7.0.11. See [`UNVERIFIED.md`](UNVERIFIED.md).
 
 ## Layout
 
-`elec/layout/default/watchy-ref-s3.kicad_pcb` is V2's board, converted from
-KiCad 5 to the current format and switched to a 4-layer stackup. It still
-carries V2's placement and routing. **The new parts are not placed and nothing
-has been rerouted.**
+`elec/layout/default/watchy-ref-s3.kicad_pcb` started as V2's board, converted
+from KiCad 5 and switched to a 4-layer stackup. `scripts/apply_netlist.py` has
+been run against it, so it is **connected but not routed**.
 
-Every carried-over part keeps V2's designator on purpose, so importing the
-netlist reuses the existing placement rather than dumping everything at the
-origin. In KiCad: open the board, **File > Import > Netlist**, point it at
-`build/default.net`, and enable "delete footprints with no symbols".
+KiCad's "Import Netlist" is a GUI dialog and `kicad-cli` has no equivalent, so
+that script does the job with `pcbnew`: it deletes the parts the netlist
+dropped, replaces the ones whose footprint changed *while preserving V2's
+position* (most of those swaps are only a KiCad 5→7 library rename, and losing
+placement over a rename would defeat the point of pinning the designators),
+adds the new parts, assigns all 249 pads to their 73 nets, lays the GND and
+`+3V3` pours, and nudges the small parts it placed off their neighbours.
 
-What then needs doing by hand:
+```bash
+/usr/bin/python3.12 scripts/apply_netlist.py --dry-run   # report only
+/usr/bin/python3.12 scripts/apply_netlist.py             # write the board
+```
 
-1. Place the MINI-1 with its antenna end overhanging the board edge. Espressif's
-   footprint carries a keepout zone on `*.Cu` that forbids tracks, vias, pads
-   and pour on every layer, so this enforces itself once the module is placed.
-2. Place the RV-3028 near the module with `C15` beside it, the USB-C where V2's
-   micro-USB sat (x=100.08, y=93.68 in board coordinates), and `U3` hard against
-   the connector.
-3. Set In1.Cu to a GND pour and In2.Cu to `+3V3`.
-4. Route `USB_DP`/`USB_DM` as a 90-ohm differential pair over In1.Cu, first,
-   before anything else claims the space.
-5. Keep the charge-pump loop (`L1`, `Q1`, `D1`-`D4`, `R9`) tight — copy V2's
+It needs the interpreter KiCad's `pcbnew` bindings were built against, not a
+venv. `scripts/check_board.py` then verifies the result independently, and
+`checks/run.sh` runs it.
+
+### What still needs a human
+
+The script reports courtyard overlaps it could not resolve, with how deep each
+one is. Anything under ~0.2mm is KiCad 7's footprints being slightly larger
+than KiCad 5's and can be ignored. The rest are real:
+
+| Overlap | Why |
+| --- | --- |
+| `U1` vs `C12`, `C1`, `R1`, `R7`, `Q5` | The module is 15.4 × 20.5mm where V2 had a 7 × 7mm QFN. It genuinely occupies the space V2's decoupling, the EN network and the RTC pull-up live in. Those five parts have to move. |
+| `D4` vs `J2` (2.3mm), `J2` vs `U2` | The USB-C receptacle is bigger than the micro-USB it replaces, at the same edge position. |
+
+Those are design decisions, not arithmetic, which is why the script reports
+them instead of guessing. After resolving them:
+
+1. Route `USB_DP`/`USB_DM` as a 90-ohm differential pair over the In1.Cu
+   ground plane, first, before anything else claims the space.
+2. Keep the charge-pump loop (`L1`, `Q1`, `D1`-`D4`, `R9`) tight — copy V2's
    relative geometry rather than re-inventing it.
-6. Run DRC.
+3. Fill the zones and run DRC (KiCad 8+).
+
+The module's antenna needs no manual keepout: Espressif's footprint carries a
+rule area on `*.Cu` that forbids tracks, vias, pads and pour on every layer,
+and `apply_netlist.py` places the module so that area hangs off the top edge.
+`check_board.py` asserts both.
 
 ### Board outline
 
