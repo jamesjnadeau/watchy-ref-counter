@@ -127,6 +127,7 @@ declare -A SOURCES=(
   [tz_edges]="RefCounter/RefZone.cpp"
   [segments_test]="RefCounter/RefSegments.cpp"
   [sport_test]="RefCounter/RefSport.cpp"
+  [sync_schedule]="RefCounter/RefSyncSchedule.cpp"
   [wifi_test]="RefCounter/RefWifi.cpp"
 )
 ```
@@ -134,13 +135,13 @@ declare -A SOURCES=(
 and to the loop:
 
 ```bash
-for t in tz_test tz_edges segments_test sport_test wifi_test; do
+for t in tz_test tz_edges segments_test sport_test sync_schedule wifi_test; do
 ```
 
 - [ ] **Step 3: Run the test to verify it fails**
 
 Run: `./tests/run.sh`
-Expected: FAIL — the compile of `wifi_test` errors with `RefWifi.h: No such file or directory`. The four existing suites still pass first.
+Expected: FAIL — the compile of `wifi_test` errors with `RefWifi.h: No such file or directory`. The five existing suites still pass first.
 
 - [ ] **Step 4: Write the header**
 
@@ -225,7 +226,7 @@ void setConfigured(bool on) {
 - [ ] **Step 6: Run the tests to verify they pass**
 
 Run: `./tests/run.sh`
-Expected: five `PASSED` blocks, including `=== wifi_test` with five `ok` lines.
+Expected: six `PASSED` blocks, including `=== wifi_test` with five `ok` lines.
 
 - [ ] **Step 7: Commit**
 
@@ -399,24 +400,24 @@ In `tests/run.sh`, add the entry to the `SOURCES` map — three sources, since t
 and to the loop:
 
 ```bash
-for t in tz_test tz_edges segments_test sport_test wifi_test menu_items_test; do
+for t in tz_test tz_edges segments_test sport_test sync_schedule wifi_test menu_items_test; do
 ```
 
-Also update the comment at the top of `tests/run.sh`, which currently names only three testable files:
+Also update the comment at the top of `tests/run.sh`, which currently names only four testable files:
 
 ```bash
-# RefZone.cpp, RefSegments.cpp, RefSport.cpp, RefWifi.cpp and RefMenuItems.cpp
-# are the files with logic worth testing off the watch: no panel, no GPIO, and
-# the sort of bugs -- a daylight saving date, a digit running off the edge of
-# the screen, a clamp, a menu row in the wrong place -- that are expensive to
-# find on hardware. They compile here against a stub Preferences; everything
-# else is the shipped source.
+# RefZone.cpp, RefSegments.cpp, RefSport.cpp, RefSyncSchedule.cpp, RefWifi.cpp
+# and RefMenuItems.cpp are the files with logic worth testing off the watch: no
+# panel, no GPIO, and the sort of bugs -- a daylight saving date, a digit
+# running off the edge of the screen, a clamp, a due-time boundary, a menu row
+# in the wrong place -- that are expensive to find on hardware. They compile
+# here against a stub Preferences; everything else is the shipped source.
 ```
 
 - [ ] **Step 3: Run the test to verify it fails**
 
 Run: `./tests/run.sh`
-Expected: FAIL — the compile of `menu_items_test` errors with `RefMenuItems.h: No such file or directory`. The five earlier suites still pass.
+Expected: FAIL — the compile of `menu_items_test` errors with `RefMenuItems.h: No such file or directory`. The six earlier suites still pass.
 
 - [ ] **Step 4: Write the header**
 
@@ -533,7 +534,7 @@ void itemLabel(uint8_t item, char *buf, size_t n) {
 - [ ] **Step 6: Run the tests to verify they pass**
 
 Run: `./tests/run.sh`
-Expected: six `PASSED` blocks. `=== menu_items_test` reports both orders, both `Setup WiFi` slots (4 without the sync row, 5 with it), the eight labels, and 16 width/no-buzz checks.
+Expected: seven `PASSED` blocks. `=== menu_items_test` reports both orders, both `Setup WiFi` slots (4 without the sync row, 5 with it), the eight labels, and 16 width/no-buzz checks.
 
 - [ ] **Step 7: Commit**
 
@@ -816,17 +817,22 @@ In `RefCounter/RefCounter.ino`, add the include alongside the others:
 
 ```cpp
 #include "RefSport.h"
+#include "RefSyncSchedule.h"
 #include "RefWifi.h"
 ```
 
-and the call in `setup()`, next to the other `begin()`s:
+and the call in `setup()`, next to the other `begin()`s. `RefDisplay::begin()`
+is no longer next to them — the resync-wake path added by `RefSyncSchedule`
+skips it deliberately — so the flag goes above that branch, where it is loaded
+on the wake-to-sync path as well as the normal one:
 
 ```cpp
   Buzzer::begin();
   Buttons::begin();
   RefSport::begin();
   RefWifi::begin();
-  RefDisplay::begin();
+
+  // A timer wake means deepSleepUntilButton() pulled the watch out of deep
 ```
 
 - [ ] **Step 9: Verify the removed code is really gone**
@@ -850,7 +856,7 @@ Expected: `RefWifi::configured()` twice and `buildVisible` twice in `open()`, `R
 - [ ] **Step 10: Run the host tests**
 
 Run: `./tests/run.sh`
-Expected: six `PASSED` blocks. Nothing in this task changes what they test, so a failure here means an edit landed in the wrong file.
+Expected: seven `PASSED` blocks. Nothing in this task changes what they test, so a failure here means an edit landed in the wrong file.
 
 - [ ] **Step 11: Build all four environments**
 
@@ -997,7 +1003,25 @@ git commit -m "feat: reorder the settings menu, gate Sync NTP on WiFi, drop the 
 
 ## Done when
 
-- `./tests/run.sh` prints six `PASSED` blocks.
+- `./tests/run.sh` prints seven `PASSED` blocks.
 - `pio run -e watchy_v2 -e watchy_v15 -e watchy_v10 -e watchy_v3` prints four `SUCCESS` lines.
 - `grep -rn "ITEM_BUZZ\|showBuzz\|Vibrate Motor" RefCounter/ tests/` prints nothing.
 - The README's menu table matches the shipped order and carries the upgrade note about re-running **Setup WiFi**.
+
+---
+
+## Execution note, 2026-08-18
+
+The plan was written against `7eee5a1`; six commits landed on `master` before
+execution started, adding `RefSyncSchedule` and turning the automatic NTP
+resync on (`NTP_RESYNC_HOURS` 0 → 3). `RefMenu.cpp` is untouched by them, so
+every code edit below applies verbatim. Three things were reconciled above:
+`tests/run.sh` now carries a fifth suite, `setup()` in the sketch was
+restructured around a resync-wake path, and the suite counts moved up by one.
+
+The spec's "out of scope" note on gating the automatic resync was written when
+that resync never ran. It now runs every three hours and wakes the watch from
+deep sleep to do it, so on a watch with no credentials it powers the radio up
+to fail. That is pre-existing behaviour rather than something this change
+introduces, and it stays out of scope here — but `RefWifi::configured()` is
+exactly the check that would suppress it, and it is worth a follow-up.
