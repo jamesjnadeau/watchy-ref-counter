@@ -114,8 +114,10 @@ static const char     WIFI_AP_NAME[]     = "Watchy Ref Counter";
 static const uint16_t WIFI_AP_TIMEOUT_S  = 120;
 
 // The RTC drifts a little every day - roughly a minute a month on the PCF8563
-// fitted to V2.0. Re-syncing over WiFi keeps it well under a second, but a
-// sync blocks for several seconds while the radio comes up, so it is only
+// fitted to V2.0, and about half a minute a year on the C6 board's RV-3028-C7,
+// which is factory trimmed rather than run off a crystal and its load caps.
+// Re-syncing over WiFi keeps either well under a second, but a sync blocks
+// for several seconds while the radio comes up, so it is only
 // worth doing when nobody is around to notice. An automatic resync therefore
 // waits for both of these to be true: the watch has sat untouched (no button
 // press, no sleep entry) for NTP_RESYNC_HOURS, and at least

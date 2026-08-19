@@ -278,7 +278,8 @@ because 02:30 never happens.
 ## Timekeeping
 
 The time comes from the watch's RTC chip, which `RefRtc` probes for at boot —
-a PCF8563 at 0x51 on the V2.0. It keeps running through low power mode and
+a PCF8563 at 0x51 on the V2.0, an RV-3028-C7 at 0x52 on the C6 board. It
+keeps running through low power mode and
 through a reflash, so the watch only needs setting once. The About screen
 reports which one was found.
 
@@ -297,13 +298,16 @@ run of idle moments in a row cannot trigger back-to-back radio activity.
 Sleep entry counts as activity in its own right, so putting the watch away
 resets the quiet clock rather than letting it tick through the night. Set
 `NTP_RESYNC_HOURS` to 0 to only ever sync by hand. A PCF8563 drifts roughly a
-minute a month, so even a daily sync keeps that under a second.
+minute a month, so even a daily sync keeps that under a second. The C6 board's
+RV-3028-C7 is factory trimmed to about half a minute a year, and needs the
+sync far less.
 
-**The C6 board has no RTC driver yet.** Its RV-3028-C7 sits at 0x52 and
-`RefRtc` does not know that address, so a C6 build finds no clock, the About
-screen reports `RTC: none`, and the time survives only as long as the SoC has
-power. Setting the time by hand or over NTP still works for that session. This
-is a gap in the firmware, not in the board.
+The two chips do not share a register layout, and the difference is the kind
+that fails quietly: the PCF8563 holds the date at 0x05 and the weekday at
+0x06, while the RV-3028 has the weekday at 0x03 and the date at 0x04. Decoding
+one with the other's map yields a day of the month between 0 and 6 — wrong,
+but shaped like a date. `tests/rtc_test.cpp` pins both layouts against a stub
+I2C bus, which is the only part of this that can be checked without hardware.
 
 An automatic sync blocks for several seconds while the radio comes up, which
 is why it waits for quiet rather than firing the moment nobody is looking.
@@ -384,7 +388,7 @@ watchy-ref-counter/
     ├── Buzzer.h/.cpp  vibration motor
     ├── RefPanel.h/.cpp    the GxEPD2 panel instance and its pins
     ├── RefDisplay.h/.cpp  screen layout and e-paper refresh strategy
-    ├── RefRtc.h/.cpp      the PCF8563 clock, over I2C
+    ├── RefRtc.h/.cpp      the PCF8563 and RV-3028-C7 clocks, over I2C
     ├── RefClock.h/.cpp    timekeeping, NTP sync, battery
     ├── RefZone.h/.cpp     US time zones and the daylight saving rule
     ├── RefSegments.h/.cpp  where the countdown digits land, host-tested
@@ -409,9 +413,9 @@ ESP32 Arduino core, and the Current Time Service is a handful of bytes this
 project encodes itself, in `RefCtsTime.cpp`.
 
 Everything else is either this project's own or comes with the ESP32 Arduino
-core. Notably there is **no RTC library**: the PCF8563 is a handful of BCD
-registers, and talking to it directly avoids a dependency that caused trouble
-— one whose `master` no longer compiles against a current core.
+core. Notably there is **no RTC library**: each RTC is a handful of BCD
+registers, and talking to them directly avoids a dependency that caused
+trouble — one whose `master` no longer compiles against a current core.
 
 The folder is named `RefCounter/` so it satisfies the Arduino IDE's rule that a
 sketch folder match its `.ino`, while `platformio.ini` points `src_dir` at the
@@ -694,15 +698,24 @@ which until now nothing did for the C6 at all. `tests/run.sh` then compiles
 `board.h` three more times, once per retired revision flag, to confirm each is
 rejected rather than quietly building the V2.0 map.
 
+`tests/rtc_test.cpp` runs the real `RefRtc` against a stub I2C bus
+(`tests/stub/Wire.h`), where a device is a flat file of registers. It covers
+both chips' BCD decoding, both register layouts, the two "the time is not set"
+flags — the PCF8563's low-voltage bit and the RV-3028's power-on reset bit —
+and a write-then-read round trip. Mutating the RV-3028 reader to use the
+PCF8563's date register, or to skip the power-on reset check, fails it.
+
 ## Known limitations
 
 - **None of this has been run on a watch.** It builds clean for both supported
   boards and the time zone, digit-layout and sport-preset logic are tested
   on a host, but no part of it has been exercised on real hardware. The least
-  proven pieces are `RefRtc`'s BCD decoding and chip probing,
-  `RefPanel::begin()` (GxEPD2's stock init rather than the reference
-  firmware's tuned one), light sleep, and whether the four buttons are
-  physically where `board.h` says they are.
+  proven pieces are `RefPanel::begin()` (GxEPD2's stock init rather than the
+  reference firmware's tuned one), light sleep, and whether the four buttons
+  are physically where `board.h` says they are. `RefRtc`'s BCD decoding and
+  chip probing used to head that list; they are now covered by
+  `tests/rtc_test.cpp` against a stub bus, which proves the arithmetic but
+  not that either chip answers on a real board.
 - Sport presets add their own untested territory: whether the leading `1`
   actually clears from the panel when a clock crosses 100 → 99 (the widened
   refresh window is the fix; only a real panel confirms it), whether nine

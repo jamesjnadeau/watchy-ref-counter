@@ -9,19 +9,25 @@
 //
 // Which one that is depends on the board, so this probes for what is actually
 // on the bus:
-//   V2.0  PCF8563  at 0x51
-//   C6    nothing this firmware can read yet; the board's RV-3028-C7 has no
-//         driver here, so it reports NONE
+//   V2.0  PCF8563    at 0x51
+//   C6    RV-3028-C7 at 0x52
 //
-// The chip is talked to directly over Wire in binary coded decimal. That is a
-// handful of register reads, and doing it here keeps the project free of the
-// RTC libraries the reference firmware pulls in -- one of which no longer
+// Both are talked to directly over Wire in binary coded decimal. That is a
+// handful of register reads each, and doing it here keeps the project free of
+// the RTC libraries the reference firmware pulls in -- one of which no longer
 // compiles against a current ESP32 core.
 //
-// Credit for the chip choice and the address: sqfmi/Watchy.
+// Their register maps are not the same shape, and the difference is a trap:
+// the PCF8563 puts the date at 0x05 and the weekday at 0x06, while the
+// RV-3028 puts the weekday at 0x03 and the date at 0x04. Reading one with the
+// other's layout yields a day of the month between 0 and 6 -- wrong, and
+// wrong in a way that looks like a date. tests/rtc_test.cpp pins both.
+//
+// Credit for the PCF8563 choice and address: sqfmi/Watchy. The RV-3028-C7 is
+// this repo's own board; see docs/superpowers/specs/ for why it was picked.
 class RefRtc {
 public:
-  enum Kind : uint8_t { NONE, PCF8563 };
+  enum Kind : uint8_t { NONE, PCF8563, RV3028 };
 
   // Probes the bus. Wire must already be started.
   void begin();
@@ -42,6 +48,7 @@ private:
   Kind _kind = NONE;
 
   bool readPCF8563(struct tm &out);
+  bool readRV3028(struct tm &out);
   bool present(uint8_t address);
 };
 

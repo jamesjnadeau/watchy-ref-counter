@@ -7,7 +7,7 @@
 # panel, no GPIO, and the sort of bugs -- a daylight saving date, a digit
 # running off the edge of the screen, a clamp, a due-time boundary, a menu row
 # in the wrong place -- that are expensive to find on hardware. They compile
-# here against a stub Preferences; everything else is the shipped source.
+# here against stub Preferences and Wire; everything else is the shipped source.
 #
 #   ./tests/run.sh
 set -euo pipefail
@@ -26,9 +26,10 @@ declare -A SOURCES=(
   [menu_items_test]="RefCounter/RefMenuItems.cpp RefCounter/RefSport.cpp RefCounter/RefZone.cpp"
   [board_test]=""
   [board_c6_test]=""
+  [rtc_test]="RefCounter/RefRtc.cpp"
 )
 
-for t in tz_test tz_edges segments_test sport_test sync_schedule wifi_test menu_items_test board_test board_c6_test; do
+for t in tz_test tz_edges segments_test sport_test sync_schedule wifi_test menu_items_test board_test board_c6_test rtc_test; do
   $CXX -std=c++17 -Wall -Wextra -Itests/stub -IRefCounter \
        -o "$out/$t" "tests/$t.cpp" ${SOURCES[$t]}
   echo "=== $t"
