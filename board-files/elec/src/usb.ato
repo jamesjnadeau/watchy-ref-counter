@@ -1,0 +1,58 @@
+# USB-C receptacle and ESD protection.
+#
+# The ESP32-S3 enumerates natively over IO19/IO20, so V2's CP2102 bridge and
+# its UMH3N auto-reset pair are gone. USB-Serial/JTAG is in ROM, so esptool
+# can drive download mode over the connector without strapping.
+
+component USBCReceptacle16P:
+    # 16-pin USB 2.0 receptacle. Pads follow the KiCad footprint's names:
+    # A/B rows plus S1 for the shell.
+    designator_prefix = "J"
+    footprint = "Connector_USB:USB_C_Receptacle_XKB_U262-16XN-4BVC11"
+    package = "USB-C-16P"
+    mpn = "U262-16XN-4BVC11"
+    value = "USB-C 16P"
+    description = "USB-C 2.0 receptacle, 16 pin"
+
+    signal GND ~ pin "A1"
+    GND ~ pin "A12"
+    GND ~ pin "B1"
+    GND ~ pin "B12"
+    signal SHIELD ~ pin "S1"
+
+    signal VBUS ~ pin "A4"
+    VBUS ~ pin "A9"
+    VBUS ~ pin "B4"
+    VBUS ~ pin "B9"
+
+    signal CC1 ~ pin "A5"
+    signal CC2 ~ pin "B5"
+
+    # Both halves of each pair are tied so the connector is reversible.
+    # Wiring only one side works in one orientation and looks like a flaky
+    # cable forever after.
+    signal DP ~ pin "A6"
+    DP ~ pin "B6"
+    signal DM ~ pin "A7"
+    DM ~ pin "B7"
+
+    signal SBU1 ~ pin "A8"
+    signal SBU2 ~ pin "B8"
+
+
+component USBLC6_2P6:
+    # ST USBLC6-2P6, SOT-666: 1 and 6 are I/O1, 3 and 4 are I/O2,
+    # 2 is GND, 5 is VBUS.
+    designator_prefix = "U"
+    footprint = "Package_TO_SOT_SMD:SOT-666"
+    package = "SOT-666"
+    mpn = "USBLC6-2P6"
+    value = "USBLC6-2P6"
+    description = "USBLC6-2P6 USB ESD array"
+
+    signal IO1 ~ pin 1
+    IO1 ~ pin 6
+    signal GND ~ pin 2
+    signal IO2 ~ pin 3
+    IO2 ~ pin 4
+    signal VBUS ~ pin 5

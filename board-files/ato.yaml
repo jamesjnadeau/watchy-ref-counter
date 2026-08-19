@@ -1,0 +1,15 @@
+ato-version: ^0.2.0
+
+paths:
+  src: elec/src
+  layout: elec/layout
+  footprints: elec/footprints/footprints.pretty
+
+builds:
+  default:
+    entry: elec/src/watchy.ato:WatchyRefS3
+    targets:
+      - netlist
+      - bom
+      - designator-map
+      - copy-footprints

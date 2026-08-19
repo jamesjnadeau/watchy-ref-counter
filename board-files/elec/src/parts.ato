@@ -1,0 +1,276 @@
+# Passives, discretes and mechanical parts.
+#
+# Values and packages are carried over verbatim from sqfmi/watchy-hardware
+# v2.0 unless a decision in the spec changes them. Upstream ships no
+# distributor part numbers for the passives, so `mpn` here repeats the
+# value the way upstream's WatchyBOM.csv does; pick real parts at order time.
+#
+# KiCad 5 library names were renamed in KiCad 6, so the footprint strings are
+# the modern equivalents of what V2 used:
+#     Resistors_SMD       -> Resistor_SMD
+#     Capacitors_SMD      -> Capacitor_SMD
+#     Diodes_SMD          -> Diode_SMD
+#     LEDs                -> LED_SMD
+#     Inductors           -> Inductor_SMD
+#     TO_SOT_Packages_SMD -> Package_TO_SOT_SMD
+
+component Resistor:
+    designator_prefix = "R"
+    pin 1
+    pin 2
+
+component R0402 from Resistor:
+    footprint = "Resistor_SMD:R_0402_1005Metric"
+    package = "0402"
+
+component R_3R from R0402:
+    mpn = "3"
+    value = "3"
+    description = "3R"
+
+component R_1k from R0402:
+    mpn = "1K"
+    value = "1K"
+    description = "1k"
+
+component R_4k7 from R0402:
+    mpn = "4.7K"
+    value = "4.7K"
+    description = "4.7k"
+
+component R_5k1 from R0402:
+    mpn = "5.1K"
+    value = "5.1K"
+    description = "5.1k"
+
+component R_10k from R0402:
+    mpn = "10K"
+    value = "10K"
+    description = "10k"
+
+component R_100k from R0402:
+    mpn = "100K"
+    value = "100K"
+    description = "100k"
+
+component R_1M from R0402:
+    mpn = "1M"
+    value = "1M"
+    description = "1M"
+
+
+component Capacitor:
+    designator_prefix = "C"
+    pin 1
+    pin 2
+
+component C_100nF_0603 from Capacitor:
+    footprint = "Capacitor_SMD:C_0603_1608Metric"
+    package = "0603"
+    # mpn carries the package too: atopile's own BOM groups by mpn alone, so
+    # two 100nF parts in different packages would otherwise collapse into one
+    # line and the wrong reel would be ordered.
+    mpn = "100nF 0603"
+    value = "100nF"
+    description = "100nF"
+
+component C_100nF_0402 from Capacitor:
+    footprint = "Capacitor_SMD:C_0402_1005Metric"
+    package = "0402"
+    mpn = "100nF 0402"
+    value = "100nF"
+    description = "100nF"
+
+component C_1uF_0603 from Capacitor:
+    footprint = "Capacitor_SMD:C_0603_1608Metric"
+    package = "0603"
+    mpn = "1uF/50V"
+    value = "1uF/50V"
+    description = "1uF/50V"
+
+component C_4u7_0805 from Capacitor:
+    footprint = "Capacitor_SMD:C_0805_2012Metric"
+    package = "0805"
+    mpn = "4.7uF/50V"
+    value = "4.7uF/50V"
+    description = "4.7uF/50V"
+
+component C_4u7_0402 from Capacitor:
+    footprint = "Capacitor_SMD:C_0402_1005Metric"
+    package = "0402"
+    mpn = "4.7uF"
+    value = "4.7uF"
+    description = "4.7uF"
+
+
+component Diode:
+    designator_prefix = "D"
+    # Pin 1 is the cathode on SOD-123, matching V2's netlist.
+    pin 1
+    pin 2
+
+component D_MBR0530 from Diode:
+    footprint = "Diode_SMD:D_SOD-123"
+    package = "SOD-123"
+    mpn = "MBR0530"
+    value = "MBR0530"
+    description = "MBR0530 Schottky"
+
+component D_1N4001 from Diode:
+    footprint = "Diode_SMD:D_SOD-123F"
+    package = "SOD-123F"
+    mpn = "1N4001"
+    value = "1N4001"
+    description = "1N4001"
+
+component D_LED from Diode:
+    footprint = "LED_SMD:LED_0603_1608Metric"
+    package = "0603"
+    mpn = "LED"
+    value = "LED"
+    description = "LED (charge status)"
+
+
+component Transistor3:
+    designator_prefix = "Q"
+    pin 1
+    pin 2
+    pin 3
+
+component Q_AO3400A from Transistor3:
+    # 1 = gate, 2 = source, 3 = drain (SOT-23 N-channel)
+    footprint = "Package_TO_SOT_SMD:SOT-23"
+    package = "SOT-23"
+    mpn = "AO3400A"
+    value = "AO3400A"
+    description = "AO3400A N-channel MOSFET"
+
+component Q_CJ2301 from Transistor3:
+    # 1 = gate, 2 = source, 3 = drain (SOT-23 P-channel)
+    footprint = "Package_TO_SOT_SMD:SOT-23"
+    package = "SOT-23"
+    mpn = "CJ2301"
+    value = "CJ2301"
+    description = "CJ2301 P-channel MOSFET"
+
+component Q_S8050 from Transistor3:
+    # 1 = base, 2 = emitter, 3 = collector (SOT-23 NPN)
+    footprint = "Package_TO_SOT_SMD:SOT-23"
+    package = "SOT-23"
+    mpn = "S8050"
+    value = "S8050"
+    description = "S8050 NPN"
+
+
+component L_10uH:
+    designator_prefix = "L"
+    footprint = "Inductor_SMD:L_Taiyo-Yuden_NR-40xx"
+    package = "NR-40xx"
+    mpn = "10uH 1A"
+    value = "10uH 1A"
+    description = "10uH 1A"
+    pin 1
+    pin 2
+
+
+component U_ME6211C33 :
+    # ME6211C33M5G-N, SOT-23-5: 1 VIN, 2 GND, 3 EN, 4 NC, 5 VOUT.
+    designator_prefix = "U"
+    footprint = "Package_TO_SOT_SMD:SOT-23-5"
+    package = "SOT-23-5"
+    mpn = "ME6211C33M5G-N"
+    value = "ME6211C33M5G-N"
+    description = "ME6211C33M5G-N 3.3V LDO"
+    pin 1
+    pin 2
+    pin 3
+    pin 4
+    pin 5
+
+component U_TP4054:
+    # TP4054, SOT-23-5: 1 CHRG, 2 GND, 3 BAT, 4 VCC, 5 PROG.
+    designator_prefix = "U"
+    footprint = "Package_TO_SOT_SMD:SOT-23-5"
+    package = "SOT-23-5"
+    mpn = "TP4054"
+    value = "TP4054"
+    description = "TP4054 Li-ion charger"
+    pin 1
+    pin 2
+    pin 3
+    pin 4
+    pin 5
+
+
+component J_FPC24:
+    # 24-way 0.5mm ZIF for the 1.54" e-paper panel. Pin M is the shell.
+    designator_prefix = "J"
+    footprint = "footprints:24_Pins_0.5mm_Pitch_ZIF_Connector_UP"
+    package = "FPC24-0.5mm"
+    mpn = "FPC24(0.5MM)"
+    value = "FPC24(0.5MM)"
+    description = "FPC24 0.5mm ZIF"
+    pin 1
+    pin 2
+    pin 3
+    pin 4
+    pin 5
+    pin 6
+    pin 7
+    pin 8
+    pin 9
+    pin 10
+    pin 11
+    pin 12
+    pin 13
+    pin 14
+    pin 15
+    pin 16
+    pin 17
+    pin 18
+    pin 19
+    pin 20
+    pin 21
+    pin 22
+    pin 23
+    pin 24
+    pin "M"
+
+component J_Battery:
+    designator_prefix = "J"
+    footprint = "footprints:1.25T-2PWT (Molex 532610271)"
+    package = "1.25mm-2P"
+    mpn = "Battery"
+    value = "Battery"
+    description = "JST 1.25mm battery connector"
+    pin 1
+    pin 2
+
+component M_Vibration:
+    designator_prefix = "M"
+    footprint = "footprints:Motor_Header"
+    package = "Motor_Header"
+    mpn = "Vibration_Motor"
+    value = "Vibration_Motor"
+    description = "Vibration motor pads"
+    pin 1
+    pin 2
+
+component SW_Tactile:
+    designator_prefix = "SW"
+    footprint = "footprints:K2-1114SA-A4SW-06"
+    package = "K2-1114SA-A4SW-06"
+    mpn = "BTN"
+    value = "BTN"
+    description = "Side tactile switch"
+    pin 1
+    pin 2
+
+component TestPoint:
+    designator_prefix = "TP"
+    footprint = "TestPoint:TestPoint_Pad_D1.0mm"
+    package = "TestPoint_1.0mm"
+    mpn = "TestPoint"
+    value = "TestPoint"
+    description = "1.0mm test pad"
+    pin 1

@@ -1,0 +1,27 @@
+# Micro Crystal RV-3028-C7 real-time clock.
+#
+# I2C address 0x52. Factory-trimmed to +/-1ppm, ~40nA, no external crystal.
+#
+# Pin numbering is the datasheet's "Pin description" table:
+#   1 CLKOUT   2 INT   3 SCL   4 SDA   5 VSS   6 VBACKUP   7 VDD   8 EVI
+#
+# The footprint is PROVISIONAL - see elec/footprints/footprints.pretty/
+# RV-3028-C7.kicad_mod and UNVERIFIED.md. It must be checked against a 1:1
+# print of the real part before this board is ordered.
+
+component RV3028C7:
+    designator_prefix = "U"
+    footprint = "footprints:RV-3028-C7"
+    package = "C7"
+    mpn = "RV-3028-C7"
+    value = "RV-3028-C7"
+    description = "RV-3028-C7 RTC"
+
+    signal CLKOUT ~ pin 1
+    signal INT ~ pin 2
+    signal SCL ~ pin 3
+    signal SDA ~ pin 4
+    signal VSS ~ pin 5
+    signal VBACKUP ~ pin 6
+    signal VDD ~ pin 7
+    signal EVI ~ pin 8
