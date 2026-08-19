@@ -315,10 +315,16 @@ void setup() {
 
   if (resyncWake) {
     refClock.connectAndSync();
+    // anyDown() reads debounced state from the last poll(), which is still
+    // whatever it was before the multi-second sync ran. Poll once now so a
+    // press held throughout the sync is actually seen: poll() debounces off
+    // the ISR's edge timestamp, not the time of the poll, so a press from
+    // seconds ago clears BUTTON_DEBOUNCE_MS on this first call.
+    Buttons::poll();
     if (!Buttons::anyDown()) {
       deepSleepUntilButton(); // never returns
     }
-    // The sleep button came down while the sync was under way. Rather than
+    // The sleep button is down now that the sync has finished. Rather than
     // trying to queue that press, fall through into a normal start; the
     // watch simply wakes up instead of going back to sleep.
     RefDisplay::begin();
