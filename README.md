@@ -195,7 +195,7 @@ hold the panel refreshing until the battery went flat.
 
 | Entry | What it does |
 | --- | --- |
-| About | Version, board revision, battery, time, uptime, last sync, RTC type |
+| About | Version, board name, battery, time, uptime, last sync, RTC type |
 | Sync NTP | Connect and set the clock from `NTP_SERVER`. Only listed once **Setup WiFi** has connected |
 | Sync BT | Set the clock from a phone over Bluetooth. Listed whenever `BT_TIME_SYNC` is on |
 | TZ: *name* | Pick a US time zone from a scrolling list |
