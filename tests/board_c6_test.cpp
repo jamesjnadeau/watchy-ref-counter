@@ -6,6 +6,7 @@
 #define ARDUINO_ESP32C6_DEV // as platformio.ini's watchy_c6 env does
 
 #include <stdio.h>
+#include <string.h>
 
 #include "board.h"
 
@@ -26,6 +27,10 @@ static_assert(BTN_PRESSED_LEVEL == LOW,
               "C6 buttons pull their pin low when pressed");
 
 int main() {
-  printf("board: C6 pin map ok\n");
+  if (strcmp(BOARD_NAME, "C6") != 0) {
+    printf("FAIL: BOARD_NAME is \"%s\", want \"C6\"\n", BOARD_NAME);
+    return 1;
+  }
+  printf("board: C6 pin map and name ok\n");
   return 0;
 }

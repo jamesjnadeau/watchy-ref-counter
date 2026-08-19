@@ -9,6 +9,7 @@
 #define ARDUINO_WATCHY_V20 // as platformio.ini's watchy_v2 env does
 
 #include <stdio.h>
+#include <string.h>
 
 #include "board.h"
 
@@ -37,6 +38,10 @@ static_assert(RefRtc::NONE == 0, "no clock found");
 static_assert(RefRtc::PCF8563 == 1, "V2.0's chip; the DS3231 slot is gone");
 
 int main() {
-  printf("board: V2.0 pin map and RTC kinds ok\n");
+  if (strcmp(BOARD_NAME, "V2.0") != 0) {
+    printf("FAIL: BOARD_NAME is \"%s\", want \"V2.0\"\n", BOARD_NAME);
+    return 1;
+  }
+  printf("board: V2.0 pin map, name and RTC kinds ok\n");
   return 0;
 }

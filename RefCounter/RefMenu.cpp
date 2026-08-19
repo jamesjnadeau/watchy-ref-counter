@@ -155,8 +155,8 @@ void showAbout(RefClock &refClock) {
 
   display.print("Ref Counter ");
   display.println(REF_COUNTER_VERSION);
-  display.print("Board: v");
-  display.println(refClock.boardRevision() / 10.0f, 1);
+  display.print("Board: ");
+  display.println(BOARD_NAME);
   display.print("Batt: ");
   display.print(refClock.batteryVolts(), 2);
   display.println("V");

@@ -2,7 +2,6 @@
 
 #include <WiFi.h>
 #include <Wire.h>
-#include <esp_chip_info.h>
 #include <esp_sntp.h>
 
 #include "RefBleTime.h"
@@ -283,17 +282,6 @@ uint32_t RefClock::secondsUntilSyncDue() {
 
 float RefClock::batteryVolts() {
   return (analogReadMilliVolts(PIN_BATT_ADC) / 1000.0f) * BATT_DIVIDER;
-}
-
-uint8_t RefClock::boardRevision() {
-  esp_chip_info_t info;
-  esp_chip_info(&info);
-  if (info.model != CHIP_ESP32) {
-    return 30; // an S3 here means V3
-  }
-  // V2.0 ships a PCF8563. Finding nothing means the chip did not answer,
-  // which is worth reporting as unknown rather than guessing a revision.
-  return _rtc.kind() == RefRtc::PCF8563 ? 20 : 0;
 }
 
 time_t RefClock::bootEpoch() const { return bootedAt; }

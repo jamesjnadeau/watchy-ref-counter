@@ -46,6 +46,11 @@
 
 #ifdef ARDUINO_ESP32C6_DEV
 // --- watchy-ref-counter's own board (ESP32-C6-MINI-1 / RV-3028-C7) ---------
+// What the About screen calls this board. The two supported boards do not
+// share a numbering scheme -- one is a Watchy revision and one is this repo's
+// own design -- so the screen prints a name rather than a number.
+#define BOARD_NAME "C6"
+
 // Every number here comes from board-files/elec/src/watchy.ato. Change them
 // there and here together; board-files/checks/netlist_check.py asserts the
 // netlist half, and nothing asserts this half.
@@ -90,6 +95,8 @@
 
 #else
 // --- Watchy V2.0 (ESP32) ---------------------------------------------------
+#define BOARD_NAME "V2.0"
+
 #define PIN_I2C_SDA 21
 #define PIN_I2C_SCL 22
 

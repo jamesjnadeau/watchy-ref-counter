@@ -95,9 +95,9 @@ public:
   // timer. RefSyncSchedule::NEVER if no automatic sync is due at all.
   uint32_t secondsUntilSyncDue();
 
-  // Battery terminal voltage, and 10 / 15 / 20 / 30 for the board revision.
+  // Battery terminal voltage. Which board this is comes from board.h's
+  // BOARD_NAME, not from here -- it is a build-time fact, not a measurement.
   float batteryVolts();
-  uint8_t boardRevision();
 
   time_t bootEpoch() const;
   time_t lastSyncEpoch() const;
