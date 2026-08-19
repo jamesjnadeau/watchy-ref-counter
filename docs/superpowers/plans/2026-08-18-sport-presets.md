@@ -14,7 +14,7 @@
 
 - **No new libraries.** GxEPD2, Adafruit GFX and WiFiManager stay the only three.
 - **Maximum countdown value is 199 seconds**, minimum 1. Warning marks and the final-countdown value may be 0, meaning off.
-- **Preset names are 9 characters or fewer**; descriptions 17 or fewer. These are what make the menu rows fit `FreeMonoBold9pt7b` (11px per glyph) on the 200px panel.
+- **Preset names are 9 characters or fewer**; descriptions 14 or fewer. Names are what make the menu rows fit `FreeMonoBold9pt7b` (11px per glyph) on the 200px panel; the description cap is set by `pickSport` drawing the description and the position counter on the same baseline -- 14 glyphs is the last width that stays clear of the counter.
 - **Warning marks are in seconds remaining**, not elapsed. ReadyRef quotes elapsed; the conversion is done once, in the spec's preset table.
 - **New persistence follows the `RefZone` pattern**: a `Preferences` handle opened and closed per read/write, defaults from `settings.h` when nothing is stored, values clamped on the way in and out.
 - **`RefSegments.cpp` and `RefSport.cpp` must compile on a host** with no Arduino headers beyond the `Preferences` stub. Neither may include `RefPanel.h`, `board.h` or anything from GxEPD2.
@@ -588,8 +588,8 @@ static void expectLabelWidths() {
     char what[64];
     snprintf(what, sizeof(what), "%s name <= 9 chars", p.name);
     expectEq(what, (long)(strlen(p.name) <= 9), 1);
-    snprintf(what, sizeof(what), "%s desc <= 17 chars", p.name);
-    expectEq(what, (long)(strlen(p.description) <= 17), 1);
+    snprintf(what, sizeof(what), "%s desc <= 14 chars", p.name);
+    expectEq(what, (long)(strlen(p.description) <= 14), 1);
   }
 }
 
@@ -707,7 +707,7 @@ static const uint16_t MAX_SECONDS       = 199;
 
 struct Preset {
   const char *name;        // menu label, <= 9 chars so the rows fit
-  const char *description; // <= 17 chars, shown under the picker
+  const char *description; // <= 14 chars, shown under the picker
   uint16_t longSeconds;    // top-right button
   uint16_t shortSeconds;   // bottom-right button
   uint16_t warnAtSeconds;  // first early warning; 0 = off

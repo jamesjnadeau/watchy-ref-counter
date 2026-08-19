@@ -59,8 +59,8 @@ static void expectLabelWidths() {
     char what[64];
     snprintf(what, sizeof(what), "%s name <= 9 chars", p.name);
     expectEq(what, (long)(strlen(p.name) <= 9), 1);
-    snprintf(what, sizeof(what), "%s desc <= 17 chars", p.name);
-    expectEq(what, (long)(strlen(p.description) <= 17), 1);
+    snprintf(what, sizeof(what), "%s desc <= 14 chars", p.name);
+    expectEq(what, (long)(strlen(p.description) <= 14), 1);
   }
 }
 
@@ -131,6 +131,22 @@ int main() {
   prefs.end();
   RefSport::begin();
   expectName("garbage index clamps", RefSport::active().name, "Football");
+
+  // Hand-edited Custom numbers in NVS must clamp on the way in too, not only
+  // when they arrive through setCustom(). begin() reads five keys off the wire
+  // (clong, cshort, cwarn, cwarn2, cfinal); a value planted directly through
+  // the Preferences API, bypassing setCustom entirely, is the case that
+  // exercises that read path rather than the write path.
+  Preferences nvsPrefs;
+  nvsPrefs.begin("refsport", false);
+  nvsPrefs.putUShort("clong", 0);    // below the clock floor of 1
+  nvsPrefs.putUShort("cwarn", 9000); // above the 199 ceiling
+  nvsPrefs.end();
+  RefSport::begin();
+  expectEq("NVS clock below floor clamps to 1",
+           RefSport::custom().longSeconds, 1);
+  expectEq("NVS mark above ceiling clamps to 199",
+           RefSport::custom().warnAtSeconds, 199);
 
   PreferencesStub::enable(false);
   printf("\n%s (%d failures)\n", failures ? "FAILED" : "PASSED", failures);

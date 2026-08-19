@@ -63,9 +63,9 @@ const uint8_t MENU_VISIBLE = 7;
 // scrolled from last time.
 uint8_t menuTop = 0;
 
-// Three of these read their current value rather than being fixed text, so the
-// menu doubles as the status display for the sport, the zone and the DST
-// switch. The widest this gets is "Sport: Base NCAA", 16 glyphs.
+// drawMenu's label buffer is char[24]: the widest this ever writes is
+// "Sport: Base NCAA" at 16 glyphs, leaving room to spare rather than sizing
+// the buffer to the exact width and hoping nothing grows past it.
 void itemLabel(uint8_t i, char *buf, size_t n) {
   switch (i) {
   case ITEM_SPORT:    snprintf(buf, n, "Sport: %s", RefSport::active().name); break;
@@ -264,7 +264,8 @@ void pickSport() {
     display.fillScreen(THEME_BG);
     display.setFont(&FreeMonoBold9pt7b);
 
-    // "Base NCAA 120/20" is the widest row, 16 glyphs of the 18 that fit.
+    // "Custom    199/199" is the widest row, 17 glyphs of the 18 that fit --
+    // Custom is reachable at its ceiling, which none of the fixed presets are.
     char row[24];
     for (uint8_t slot = 0; slot < VISIBLE && top + slot < total; slot++) {
       const uint8_t s       = (uint8_t)(top + slot);
@@ -577,7 +578,10 @@ const char *customFieldLabel(int8_t f) {
 // Edit the Custom preset's five numbers. MENU steps forward through the fields
 // and commits past the last one, BACK steps back, UP and DOWN change the value
 // under the cursor, and the field being edited blinks -- the same interaction
-// as setTime above, deliberately.
+// as setTime above, deliberately. Unlike setTime, this one times out: it is
+// menu row 2, so an accidental open sits directly under where the menu opens,
+// and every other picker already bails after MENU_TIMEOUT_MS rather than
+// stranding the watch on a screen mid-game.
 //
 // Values are text rather than seven-segment digits: five labelled rows are far
 // more readable than five bare numbers, and it keeps new segment geometry out
@@ -590,28 +594,43 @@ void editCustom() {
   uint16_t value[CF_COUNT] = {c.longSeconds, c.shortSeconds, c.warnAtSeconds,
                               c.warn2AtSeconds, c.finalCountdownFrom};
 
-  int8_t field = CF_LONG;
-  bool   blink = false;
+  int8_t field     = CF_LONG;
+  bool   blink     = false;
+  // Only true on the MENU-past-last-field path below, so a timeout -- which
+  // also falls out of the loop -- can never reach the commit at the bottom.
+  bool   committed = false;
 
   claimButtons();
   display.setFullWindow();
 
   // No delay in this loop and no debounce: the partial refresh at the bottom
   // takes most of half a second, which is what paces it. Same as setTime.
-  while (true) {
-    if (pressed(PIN_BTN_MENU)) {
+  uint32_t lastActivity = millis();
+  while (millis() - lastActivity < MENU_TIMEOUT_MS) {
+    const bool menuDown = pressed(PIN_BTN_MENU);
+    const bool backDown = pressed(PIN_BTN_BACK);
+    const bool upDown   = pressed(PIN_BTN_UP);
+    const bool downDown = pressed(PIN_BTN_DOWN);
+    // Any press counts as activity, even one that turns out to be inert (BACK
+    // on the first field): a user still working the buttons is not idle.
+    if (menuDown || backDown || upDown || downDown) {
+      lastActivity = millis();
+    }
+
+    if (menuDown) {
       field++;
       if (field >= CF_COUNT) {
+        committed = true;
         break;
       }
     }
-    if (pressed(PIN_BTN_BACK) && field != CF_LONG) {
+    if (backDown && field != CF_LONG) {
       field--;
     }
 
     blink = !blink;
 
-    const int delta = pressed(PIN_BTN_DOWN) ? 1 : (pressed(PIN_BTN_UP) ? -1 : 0);
+    const int delta = downDown ? 1 : (upDown ? -1 : 0);
     if (delta != 0) {
       blink = true; // never hide the field the user is actively changing
       // The two clocks bottom out at 1; a mark of 0 means off, so those wrap
@@ -658,9 +677,13 @@ void editCustom() {
     display.display(true); // partial refresh
   }
 
-  RefSport::setCustom(value[CF_LONG], value[CF_SHORT], value[CF_WARN],
-                      value[CF_WARN2], value[CF_FINAL]);
-  Buzzer::pulse(BUZZ_CONFIRM_MS);
+  // A timeout falls out of the loop above too, so this only fires on the
+  // MENU-past-last-field path -- a stale in-progress edit is never persisted.
+  if (committed) {
+    RefSport::setCustom(value[CF_LONG], value[CF_SHORT], value[CF_WARN],
+                        value[CF_WARN2], value[CF_FINAL]);
+    Buzzer::pulse(BUZZ_CONFIRM_MS);
+  }
 }
 
 void portalCallback(WiFiManager *) {

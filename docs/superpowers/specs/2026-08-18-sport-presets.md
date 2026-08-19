@@ -93,7 +93,11 @@ Model 1132's second pre-warning (15 remaining) is reachable through Custom.
 
 Names are capped at **9 characters** so the menu row `Sport: Base NCAA` fits the
 200px panel in `FreeMonoBold9pt7b` (11px per glyph, 16 glyphs = 176px).
-Descriptions are capped at **17 characters**, matching `RefZone::region`.
+Descriptions are capped at **14 characters**. `pickSport` draws the description
+and the position counter on the same baseline (y=180); with 7 presets the
+counter is always 3 glyphs, right-aligned starting at x=165. A description of N
+glyphs starts at x=2 and ends at x=2+11N, so 14 glyphs (ending at 156) is the
+last width that stays clear of the counter — 15 would already touch it.
 
 ## Behaviour
 

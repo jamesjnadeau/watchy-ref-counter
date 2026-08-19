@@ -167,8 +167,9 @@ footer shows the active sport's name, in capitals, in place of `HOLD TO
 START` — the thing worth checking before kickoff is which preset is loaded,
 not how the buttons work.
 
-**Running** — the current clock, large, updating every second. The header shows
-which clock is running, plus a battery gauge.
+**Running** — the current clock, large, updating every second. The header is
+the same wall clock and battery gauge every screen carries; it does not say
+which of the two clocks is counting.
 
 **Time expired** — `00` holds for `EXPIRED_HOLD_MS` (3s), long enough to
 register the delay of game, then the watch drops back to Ready on its own.
@@ -561,6 +562,12 @@ see below.
   whether the Custom editor's five rows fit without the descenders clipping.
   NVS is assumed to survive a reflash for the `refsport` namespace the way it
   reportedly does for `refzone`, but that has never been confirmed either.
+- Longer presets mean longer runs of partial refreshes: a 40s Football clock
+  was already 39 consecutive `displayWindow` ticks before the deferred full
+  refresh, but a 120s Lacrosse clock is 119 and Custom at its 199 ceiling is
+  198. The full refresh on the way back to Ready still runs and still clears
+  it, so nothing is broken, but how much ghosting a run that long leaves on a
+  real panel in between is untested like everything else here.
 - Buttons are not sampled during a buzz or a screen refresh. A hold that starts
   and ends inside one of those windows is missed; a hold you keep held is
   always caught, up to ~400ms late.

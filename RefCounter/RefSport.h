@@ -23,7 +23,7 @@ static const uint16_t MAX_SECONDS       = 199;
 
 struct Preset {
   const char *name;        // menu label, <= 9 chars so the rows fit
-  const char *description; // <= 17 chars, shown under the picker
+  const char *description; // <= 14 chars, shown under the picker
   uint16_t longSeconds;    // top-right button
   uint16_t shortSeconds;   // bottom-right button
   uint16_t warnAtSeconds;  // first early warning; 0 = off

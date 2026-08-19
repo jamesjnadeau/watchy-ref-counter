@@ -9,6 +9,13 @@
 #include "board.h"
 #include "settings.h"
 
+// RefSegments and RefSport each define their own ceiling so neither has to
+// depend on the other. This is the one place both are visible, so it is where
+// a divergence gets caught -- at compile time rather than as a silently
+// clamped countdown.
+static_assert(RefSport::MAX_SECONDS <= SEG_MAX_VALUE,
+              "a preset could hold a value the display cannot draw");
+
 extern const uint16_t THEME_FG = DARK_MODE ? GxEPD_WHITE : GxEPD_BLACK;
 extern const uint16_t THEME_BG = DARK_MODE ? GxEPD_BLACK : GxEPD_WHITE;
 
