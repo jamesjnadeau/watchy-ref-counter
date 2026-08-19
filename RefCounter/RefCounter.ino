@@ -26,6 +26,7 @@
 #include "RefClock.h"
 #include "RefSport.h"
 #include "RefSyncSchedule.h"
+#include "RefWifi.h"
 #include "board.h"
 #include "settings.h"
 
@@ -300,6 +301,7 @@ void setup() {
   Buzzer::begin();
   Buttons::begin();
   RefSport::begin();
+  RefWifi::begin();
 
   // A timer wake means deepSleepUntilButton() pulled the watch out of deep
   // sleep on its own, purely to resync the RTC. The SLEEPING screen is still

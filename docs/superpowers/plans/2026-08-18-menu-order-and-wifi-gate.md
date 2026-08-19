@@ -226,7 +226,10 @@ void setConfigured(bool on) {
 - [ ] **Step 6: Run the tests to verify they pass**
 
 Run: `./tests/run.sh`
-Expected: six `PASSED` blocks, including `=== wifi_test` with five `ok` lines.
+Expected: `run.sh` exits 0, with a `=== wifi_test` block of five `ok` lines.
+`run.sh` runs under `set -e`, so a failing suite aborts it -- the exit status
+is the check, not a count of `PASSED` lines (`tz_test` prints `all checks
+passed` and `tz_edges` prints a report with no verdict at all).
 
 - [ ] **Step 7: Commit**
 
@@ -417,7 +420,7 @@ Also update the comment at the top of `tests/run.sh`, which currently names only
 - [ ] **Step 3: Run the test to verify it fails**
 
 Run: `./tests/run.sh`
-Expected: FAIL — the compile of `menu_items_test` errors with `RefMenuItems.h: No such file or directory`. The six earlier suites still pass.
+Expected: FAIL — the compile of `menu_items_test` errors with `RefMenuItems.h: No such file or directory`. The six earlier suites still run clean first.
 
 - [ ] **Step 4: Write the header**
 
@@ -534,7 +537,7 @@ void itemLabel(uint8_t item, char *buf, size_t n) {
 - [ ] **Step 6: Run the tests to verify they pass**
 
 Run: `./tests/run.sh`
-Expected: seven `PASSED` blocks. `=== menu_items_test` reports both orders, both `Setup WiFi` slots (4 without the sync row, 5 with it), the eight labels, and 16 width/no-buzz checks.
+Expected: `run.sh` exits 0. `=== menu_items_test` reports both orders, both `Setup WiFi` slots (4 without the sync row, 5 with it), the eight labels, and 16 width/no-buzz checks.
 
 - [ ] **Step 7: Commit**
 
@@ -843,7 +846,9 @@ Run:
 grep -rn "ITEM_BUZZ\|showBuzz\|Vibrate Motor" RefCounter/ tests/
 ```
 
-Expected: no output at all.
+Expected: exactly two hits, both deliberate — the regression guard in
+`tests/menu_items_test.cpp` and the line in `RefMenu.cpp`'s header comment
+explaining the row's absence. No `ITEM_BUZZ` and no `showBuzz` anywhere.
 
 Run:
 
@@ -856,7 +861,7 @@ Expected: `RefWifi::configured()` twice and `buildVisible` twice in `open()`, `R
 - [ ] **Step 10: Run the host tests**
 
 Run: `./tests/run.sh`
-Expected: seven `PASSED` blocks. Nothing in this task changes what they test, so a failure here means an edit landed in the wrong file.
+Expected: `run.sh` exits 0. Nothing in this task changes what they test, so a failure here means an edit landed in the wrong file.
 
 - [ ] **Step 11: Build all four environments**
 
@@ -1003,7 +1008,7 @@ git commit -m "feat: reorder the settings menu, gate Sync NTP on WiFi, drop the 
 
 ## Done when
 
-- `./tests/run.sh` prints seven `PASSED` blocks.
+- `./tests/run.sh` exits 0.
 - `pio run -e watchy_v2 -e watchy_v15 -e watchy_v10 -e watchy_v3` prints four `SUCCESS` lines.
 - `grep -rn "ITEM_BUZZ\|showBuzz\|Vibrate Motor" RefCounter/ tests/` prints nothing.
 - The README's menu table matches the shipped order and carries the upgrade note about re-running **Setup WiFi**.
