@@ -54,11 +54,6 @@ bool RefRtc::present(uint8_t address) {
 }
 
 void RefRtc::begin() {
-#ifdef ARDUINO_ESP32S3_DEV
-  // No external RTC on V3; the SoC keeps time across deep sleep on its own
-  // 32kHz crystal.
-  _kind = INTERNAL;
-#else
   if (present(ADDR_PCF8563)) {
     _kind = PCF8563;
     // Control 1 and 2 cleared: run normally, no alarm or timer interrupts.
@@ -67,7 +62,6 @@ void RefRtc::begin() {
   } else {
     _kind = NONE;
   }
-#endif
 }
 
 // PCF8563 registers 0x02..0x08: seconds (bit 7 is the low voltage flag),
@@ -95,12 +89,6 @@ bool RefRtc::read(struct tm &out) {
   case PCF8563:
     ok = readPCF8563(out);
     break;
-  case INTERNAL: {
-    const time_t now = time(nullptr);
-    localtime_r(&now, &out);
-    ok = true;
-    break;
-  }
   default:
     return false;
   }
@@ -121,8 +109,8 @@ bool RefRtc::set(const struct tm &in) {
   struct tm t = in;
   normalise(t);
 
-  // Keep the SoC's own clock in step whatever else is fitted, so time() works
-  // and V3 has somewhere to store it at all.
+  // Keep the SoC's own clock in step whatever else is fitted, so time() and
+  // anything built on it agree with the chip.
   struct timeval tv = {};
   struct tm copy    = t;
   tv.tv_sec         = mktime(&copy);
@@ -138,8 +126,6 @@ bool RefRtc::set(const struct tm &in) {
     };
     return writeRegisters(ADDR_PCF8563, 0x02, r, 7);
   }
-  case INTERNAL:
-    return true; // settimeofday above was the whole job
   default:
     return false;
   }

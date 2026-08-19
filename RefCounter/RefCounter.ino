@@ -177,7 +177,7 @@ static void tickRunning() {
 }
 
 static void deepSleepUntilButton() {
-#if defined(ARDUINO_ESP32S3_DEV) || defined(ARDUINO_ESP32C6_DEV)
+#ifdef ARDUINO_ESP32C6_DEV
   rtc_gpio_set_direction((gpio_num_t)BTN_SLEEP_PIN, RTC_GPIO_MODE_INPUT_ONLY);
   rtc_gpio_pullup_en((gpio_num_t)BTN_SLEEP_PIN);
 #else

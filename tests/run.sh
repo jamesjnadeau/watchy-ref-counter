@@ -25,9 +25,10 @@ declare -A SOURCES=(
   [cts_time_test]="RefCounter/RefCtsTime.cpp"
   [menu_items_test]="RefCounter/RefMenuItems.cpp RefCounter/RefSport.cpp RefCounter/RefZone.cpp"
   [board_test]=""
+  [board_c6_test]=""
 )
 
-for t in tz_test tz_edges segments_test sport_test sync_schedule wifi_test menu_items_test board_test; do
+for t in tz_test tz_edges segments_test sport_test sync_schedule wifi_test menu_items_test board_test board_c6_test; do
   $CXX -std=c++17 -Wall -Wextra -Itests/stub -IRefCounter \
        -o "$out/$t" "tests/$t.cpp" ${SOURCES[$t]}
   echo "=== $t"
@@ -41,7 +42,7 @@ done
 # are on other pins entirely. This is a compile that has to fail, which is why
 # it lives here rather than in a .cpp.
 echo "=== board_guard"
-for flag in ARDUINO_WATCHY_V10 ARDUINO_WATCHY_V15; do
+for flag in ARDUINO_WATCHY_V10 ARDUINO_WATCHY_V15 ARDUINO_ESP32S3_DEV; do
   if err=$($CXX -std=c++17 -Itests/stub -IRefCounter -fsyntax-only \
                 -D "$flag" -xc++ - <<<'#include "board.h"' 2>&1); then
     echo "FAIL: board.h accepted -D $flag" >&2

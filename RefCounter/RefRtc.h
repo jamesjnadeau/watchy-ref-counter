@@ -21,7 +21,7 @@
 // Credit for the chip choice and the address: sqfmi/Watchy.
 class RefRtc {
 public:
-  enum Kind : uint8_t { NONE, PCF8563, INTERNAL };
+  enum Kind : uint8_t { NONE, PCF8563 };
 
   // Probes the bus. Wire must already be started.
   void begin();

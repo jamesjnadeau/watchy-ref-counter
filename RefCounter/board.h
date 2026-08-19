@@ -27,17 +27,19 @@
 // The C6 board needs nothing: selecting an ESP32-C6 board defines
 // ARDUINO_ESP32C6_DEV.
 
-// V1.0 and V1.5 are no longer supported. Their up button and battery tap sat
-// on other pins than V2.0's -- 32/33 on V1.0 and 32/35 on V1.5, against
-// 35/34 here -- so quietly building the V2.0 map for one of them would read
-// the battery off the wrong pin and never see the up button at all. A stale
-// build flag or an old #define left in this file therefore stops the build.
-#if defined(ARDUINO_WATCHY_V10) || defined(ARDUINO_WATCHY_V15)
+// V1.0, V1.5 and V3 are no longer supported. The two V1 revisions put the up
+// button and the battery tap on other pins than V2.0's -- 32/33 on V1.0 and
+// 32/35 on V1.5, against 35/34 here -- and V3 is an ESP32-S3, which has no
+// GPIO 26 or 35 to build the V2.0 map on at all. Quietly falling through to
+// that map would read the battery off the wrong pin and never see the up
+// button, so a stale build flag, an old #define left in this file, or simply
+// picking an S3 board stops the build instead.
+#if defined(ARDUINO_WATCHY_V10) || defined(ARDUINO_WATCHY_V15) ||              \
+    defined(ARDUINO_ESP32S3_DEV)
 #error "Watchy V1.0, V1.5 and V3 are no longer supported; build watchy_v2 or watchy_c6"
 #endif
 
-#if !defined(ARDUINO_ESP32S3_DEV) && !defined(ARDUINO_ESP32C6_DEV) &&          \
-    !defined(ARDUINO_WATCHY_V20)
+#if !defined(ARDUINO_ESP32C6_DEV) && !defined(ARDUINO_WATCHY_V20)
 #warning "No Watchy revision defined; assuming V2.0"
 #define ARDUINO_WATCHY_V20
 #endif
@@ -83,50 +85,7 @@
 #define BTN_EXT1_WAKE_MODE         ESP_EXT1_WAKEUP_ANY_LOW
 #define BTN_LIGHT_SLEEP_WAKE_LEVEL GPIO_INTR_LOW_LEVEL
 
-// 1M/1M divider, as on the S3 board -- 2:1, and 2.1uA of standing drain.
-#define BATT_DIVIDER 2.0f
-
-#elif defined(ARDUINO_ESP32S3_DEV)
-// --- V3 (ESP32-S3) ---------------------------------------------------------
-#define PIN_I2C_SDA 12
-#define PIN_I2C_SCL 11
-
-// SCK/MOSI/CS follow elec/src/watchy.ato, where the six display signals are
-// assigned to module pins 27..32 in the same left-to-right order the panel's
-// FPC presents them, so the fan-out does not cross itself. Change them there
-// and here together.
-#define PIN_SPI_SCK  33
-#define PIN_SPI_MISO 46
-#define PIN_SPI_MOSI 47
-#define PIN_SPI_SS   34
-
-// IO4..IO7, per elec/src/watchy.ato and the spec's pin map. These were 7/6/0/8
-// -- carried over from a different revision and wrong for this board on every
-// line. IO0 is the boot strapping pin and is TP_BOOT here, so "UP" would have
-// pulled it low; MENU read BTN_DOWN, BACK read BTN_UP, and DOWN read RTC_INT.
-#define PIN_BTN_MENU 4
-#define PIN_BTN_BACK 5
-#define PIN_BTN_UP   6
-#define PIN_BTN_DOWN 7
-
-#define PIN_DISPLAY_CS   34
-#define PIN_DISPLAY_DC   48
-#define PIN_DISPLAY_RST  35
-#define PIN_DISPLAY_BUSY 36
-
-#define PIN_VIB_MOTOR 17
-#define PIN_BATT_ADC  9
-
-// Buttons pull their pin low when pressed.
-#define BTN_PRESSED_LEVEL          LOW
-#define BTN_EXT1_WAKE_MODE         ESP_EXT1_WAKEUP_ANY_LOW
-#define BTN_LIGHT_SLEEP_WAKE_LEVEL GPIO_INTR_LOW_LEVEL
-
-// Battery is measured through a 360k / 100k divider.
-// This board's divider is 1M/1M -- a 2:1 ratio, chosen over V2's 100k/100k to
-// cut the standing drain from 21uA to 2.1uA. The 360k/100k expression here was
-// another revision's and gave 1.28 instead of 2.0, reading the battery ~36%
-// low. See elec/src/watchy.ato, "V2's two 100k draw 4.2V/200k".
+// 1M/1M divider: 2:1, and 2.1uA of standing drain against V2.0's 21uA.
 #define BATT_DIVIDER 2.0f
 
 #else
