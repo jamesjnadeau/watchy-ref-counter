@@ -20,9 +20,10 @@ declare -A SOURCES=(
   [segments_test]="RefCounter/RefSegments.cpp"
   [sport_test]="RefCounter/RefSport.cpp"
   [sync_schedule]="RefCounter/RefSyncSchedule.cpp"
+  [wifi_test]="RefCounter/RefWifi.cpp"
 )
 
-for t in tz_test tz_edges segments_test sport_test sync_schedule; do
+for t in tz_test tz_edges segments_test sport_test sync_schedule wifi_test; do
   $CXX -std=c++17 -Wall -Wextra -Itests/stub -IRefCounter \
        -o "$out/$t" "tests/$t.cpp" ${SOURCES[$t]}
   echo "=== $t"
