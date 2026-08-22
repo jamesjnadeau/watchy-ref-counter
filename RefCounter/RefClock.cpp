@@ -5,6 +5,7 @@
 #include <esp_chip_info.h>
 #include <esp_sntp.h>
 
+#include "RefBleTime.h"
 #include "RefSyncSchedule.h"
 #include "RefZone.h"
 #include "board.h"
@@ -21,10 +22,20 @@ RTC_DATA_ATTR time_t lastSyncOk      = 0;
 RTC_DATA_ATTR time_t bootedAt        = 0;
 RTC_DATA_ATTR time_t lastActivity    = 0;
 
+// Which of the two sources last set the clock. Survives deep sleep with the
+// stamps it belongs to, so the About screen still says "BT" after a night in
+// low power mode.
+RTC_DATA_ATTR uint8_t lastSyncKind = RefClock::SYNC_NONE;
+
 // Unlike the above, this must NOT survive deep sleep: it limits a WiFi-less
 // watch to one sync attempt per wake cycle, rather than spinning on an unset
 // RTC every time syncDue() is polled.
 bool unsetSyncTried = false;
+
+// How often a Bluetooth sync window checks whether a phone has written yet.
+// Only the automatic path uses this; the menu polls on its own button
+// interval so it can watch for BACK at the same time.
+const uint32_t BLE_POLL_MS = 50;
 
 // Shared by syncDue() and secondsUntilSyncDue() so that one RTC read serves
 // both. Reading the chip costs two I2C transactions and a struct tm round
@@ -132,7 +143,80 @@ bool RefClock::syncFromNtp() {
 
   lastSyncAttempt = _rtc.epoch();
   if (ok) {
-    lastSyncOk = lastSyncAttempt;
+    lastSyncOk   = lastSyncAttempt;
+    lastSyncKind = SYNC_NTP;
+  }
+  return ok;
+}
+
+bool RefClock::applyBleStamp(const RefCtsTime::Stamp &stamp) {
+  bool ok = false;
+
+  if (stamp.haveOffset) {
+    // The phone sent the zone its clock is in, so the conversion is exact and
+    // needs nothing from RefZone. TZ is UTC0 for the life of the sketch, so
+    // mktime here is a plain count of seconds, not a local time conversion.
+    struct tm copy = stamp.wall;
+    copy.tm_isdst  = 0;
+    const time_t asWritten = mktime(&copy);
+    if (asWritten != (time_t)-1) {
+      const time_t utc = asWritten - stamp.offsetSeconds;
+      struct tm utcTm;
+      gmtime_r(&utc, &utcTm);
+      ok = _rtc.set(utcTm);
+    }
+  } else {
+    // No zone from the phone: treat what it wrote as local to the zone the
+    // watch is set to. That is the same assumption the Set Time screen makes,
+    // and setLocal applies the daylight saving rule with it.
+    ok = setLocal(stamp.wall);
+  }
+
+  // Stamped after the write, so the attempt is recorded against the newly set
+  // clock rather than the drifted one it replaced.
+  lastSyncAttempt = _rtc.epoch();
+  if (ok) {
+    lastSyncOk   = lastSyncAttempt;
+    lastSyncKind = SYNC_BT;
+  }
+  return ok;
+}
+
+void RefClock::publishBleTime(const struct tm &local) {
+  RefBleTime::publish(local, utcOffsetSeconds());
+}
+
+void RefClock::noteSyncAttempt() { lastSyncAttempt = _rtc.epoch(); }
+
+bool RefClock::syncFromBluetooth(uint32_t windowMs) {
+  if (!RefBleTime::begin()) {
+    noteSyncAttempt();
+    return false;
+  }
+
+  // Let a phone that reads the characteristics see the watch's current time
+  // rather than an empty value. Skipped when the clock has never been set,
+  // which is the case where there is nothing truthful to publish.
+  struct tm local;
+  if (localNow(local)) {
+    publishBleTime(local);
+  }
+
+  bool ok = false;
+  RefCtsTime::Stamp stamp;
+  RefCtsTime::clear(stamp);
+  const uint32_t deadline = millis() + windowMs;
+  while ((int32_t)(millis() - deadline) < 0) {
+    if (RefBleTime::take(stamp)) {
+      ok = applyBleStamp(stamp);
+      break;
+    }
+    delay(BLE_POLL_MS);
+  }
+
+  RefBleTime::end();
+  if (!ok) {
+    noteSyncAttempt();
   }
   return ok;
 }
@@ -143,11 +227,23 @@ bool RefClock::connectAndSync() {
   if (WiFi.begin() != WL_CONNECT_FAILED &&
       WiFi.waitForConnectResult() == WL_CONNECTED) {
     ok = syncFromNtp();
-  } else {
-    lastSyncAttempt = _rtc.epoch();
   }
+  // Off before Bluetooth comes up, not just at the end: the two radios share
+  // one antenna and the memory the BLE controller wants is memory the WiFi
+  // stack is holding.
   WiFi.disconnect(true);
   WiFi.mode(WIFI_OFF);
+
+  // Fall back to a phone only if NTP produced nothing and the fallback is
+  // switched on. It is off by default: unlike NTP, this one needs an app on a
+  // phone that syncs time by itself, and advertising to nobody costs battery.
+  if (!ok && BT_AUTO_SYNC_SECONDS > 0 && RefBleTime::supported()) {
+    ok = syncFromBluetooth((uint32_t)BT_AUTO_SYNC_SECONDS * 1000UL);
+  }
+
+  if (!ok) {
+    noteSyncAttempt();
+  }
   return ok;
 }
 
@@ -215,3 +311,7 @@ uint8_t RefClock::boardRevision() {
 
 time_t RefClock::bootEpoch() const { return bootedAt; }
 time_t RefClock::lastSyncEpoch() const { return lastSyncOk; }
+
+RefClock::SyncSource RefClock::lastSyncSource() const {
+  return (SyncSource)lastSyncKind;
+}

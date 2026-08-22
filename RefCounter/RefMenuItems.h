@@ -12,13 +12,16 @@
 // build off the watch. Nothing here draws anything or reads a button.
 namespace RefMenu {
 
-// Menu order. About first, because that is the row the menu opens on, then the
-// three rows that touch the clock and the two that touch the radio. The sport
-// rows are last: they are set once for the season, where everything above them
-// is either read or adjusted in the field.
+// Menu order. About first, because that is the row the menu opens on, then
+// the rows that touch the clock and the ones that touch a radio. The two sync
+// rows sit together at the top of those, in the order they are reached for:
+// NTP is unattended and exact, Bluetooth needs a phone in your hand. The
+// sport rows are last: they are set once for the season, where everything
+// above them is either read or adjusted in the field.
 enum Item : uint8_t {
   ITEM_ABOUT,
   ITEM_SYNC,
+  ITEM_SYNC_BT,
   ITEM_ZONE,
   ITEM_DST,
   ITEM_SET_TIME,
@@ -34,9 +37,14 @@ enum Item : uint8_t {
 static const size_t ITEM_LABEL_MAX = 24;
 
 // Fill `out` -- which must hold ITEM_COUNT entries -- with the items to show,
-// in menu order, and return how many there are. "Sync NTP" is left out until
-// WiFi credentials have been saved: with none stored it could only ever fail.
-uint8_t buildVisible(bool wifiConfigured, uint8_t *out);
+// in menu order, and return how many there are.
+//
+// Two rows are conditional. "Sync NTP" is left out until WiFi credentials
+// have been saved: with none stored it could only ever fail. "Sync BT" is
+// left out when the build has no Bluetooth, or BT_TIME_SYNC is off -- but it
+// needs nothing saved, so where it is offered at all it is offered from the
+// first boot.
+uint8_t buildVisible(bool wifiConfigured, bool btAvailable, uint8_t *out);
 
 // Which slot of a list built by buildVisible holds `item`, or -1 when that
 // item is not currently shown. This is how the highlight follows a row across

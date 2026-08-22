@@ -128,6 +128,38 @@ static const uint16_t WIFI_AP_TIMEOUT_S  = 120;
 static const uint32_t NTP_RESYNC_HOURS = 3;
 static const uint32_t NTP_MIN_SYNC_INTERVAL_HOURS = 24;
 
+// --- Bluetooth time sync ---------------------------------------------------
+// The other way to set the clock: a phone, over Bluetooth Low Energy, with no
+// WiFi involved. The watch advertises the standard Current Time Service while
+// the menu's "Sync BT" screen is open and the phone writes the time into it --
+// Gadgetbridge does that on its own, and nRF Connect can do it by hand. See
+// the README for what to press on the phone.
+//
+// Set false to take it off the watch: the menu row goes away, the automatic
+// fallback below never fires, and the radio is never powered up. The BLE
+// library is still linked into the build either way, so that saves battery
+// rather than flash. Left on it costs nothing while no sync window is open --
+// the radio only comes up inside one.
+static const bool BT_TIME_SYNC = true;
+
+// The name the watch advertises under -- what you pick out of the list on the
+// phone. Keep it short: it rides in the 31 byte scan response, and the BLE
+// library warns that a name past 29 characters overruns that packet.
+static const char BT_DEVICE_NAME[] = "Ref Counter";
+
+// How long the "Sync BT" screen waits for a phone before giving up. BACK
+// cancels it sooner.
+static const uint32_t BT_SYNC_TIMEOUT_MS = 60000;
+
+// Automatic sync fallback. When an automatic sync falls due (the schedule
+// above) and NTP is not available -- no WiFi credentials saved, or the
+// connection failed -- the watch can advertise for this many seconds in the
+// hope that a companion app writes the time. 0 leaves automatic sync to NTP
+// alone, which is the default: it is worth having only if a phone app is set
+// up to sync time to this watch by itself, and advertising to nobody costs
+// battery. The manual "Sync BT" screen works either way.
+static const uint32_t BT_AUTO_SYNC_SECONDS = 0;
+
 // Leave the menu and return to the ready screen after this long with no button
 // presses, so a menu opened by accident cannot strand you mid-game.
 static const uint32_t MENU_TIMEOUT_MS = 15000;

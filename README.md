@@ -33,8 +33,8 @@ follow without looking at your wrist.
 
 **This repo stands alone.** It does not link against the
 [Watchy library](https://github.com/sqfmi/Watchy); the panel is driven through
-GxEPD2, the RTC chips directly over I2C, and NTP through the ESP32 core's own
-SNTP client. Where the behaviour follows that firmware — the menu, the
+GxEPD2, the RTC chips directly over I2C, NTP through the ESP32 core's own SNTP
+client, and the Bluetooth time sync through its BLE stack. Where the behaviour follows that firmware — the menu, the
 set-time screen, the pin map — the comments credit it, but none of its code is
 here. It builds with the reference repo nowhere on disk.
 
@@ -180,10 +180,11 @@ Starting a new clock during that window cancels the return.
 **Menu** — held open from Ready. Navigation follows the reference: UP/DOWN to
 move, MENU (bottom left) to select, BACK (top left) to leave. It also drops
 back to Ready by itself after `MENU_TIMEOUT_MS`, so a menu opened by accident
-cannot strand you mid-game. Eight entries do not fit the panel at once, so the
+cannot strand you mid-game. Nine entries do not fit the panel at once, so the
 list scrolls a seven-row window, keeping the highlighted entry in view the same
-way the time zone picker already does. Before WiFi has been set up there are
-only seven and it does not scroll at all.
+way the time zone picker already does. Two of the nine are conditional — **Sync
+NTP** and **Sync BT** — and with neither on offer the remaining seven fit
+without scrolling at all.
 
 Every screen the menu opens times out on the same rule, and a timeout always
 **discards**: Set Time leaves the clock alone, Edit Custom leaves the stored
@@ -196,6 +197,7 @@ hold the panel refreshing until the battery went flat.
 | --- | --- |
 | About | Version, board revision, battery, time, uptime, last sync, RTC type |
 | Sync NTP | Connect and set the clock from `NTP_SERVER`. Only listed once **Setup WiFi** has connected |
+| Sync BT | Set the clock from a phone over Bluetooth. Listed whenever `BT_TIME_SYNC` is on |
 | TZ: *name* | Pick a US time zone from a scrolling list |
 | DST: Auto/Off | Turn the daylight saving rule on or off |
 | Set Time | Set the clock by hand, no WiFi needed |
@@ -215,6 +217,13 @@ upgraded from a firmware without that flag has nothing stored and will hide the
 row until **Setup WiFi** is run once more. A setup that fails or times out
 clears the flag again, correctly: that screen wipes the saved credentials
 before it raises its access point.
+
+**Sync BT** is the other way round: it needs nothing saved, so it is there from
+the first boot. It advertises the watch for `BT_SYNC_TIMEOUT_MS` (60s) and
+waits for a phone to write the time; the screen says when a phone has
+connected, BACK gives up early, and the result screen names the zone the
+conversion used. See *Setting the clock from a phone* below for what to press
+on the phone.
 
 There is no "Show Accelerometer". The reference has one, but nothing on a play
 clock reads the sensor, and leaving it out means the BMA423 is never powered
@@ -278,7 +287,8 @@ The chip is kept in UTC, not local time. That is what lets the zone and DST
 settings change with no clock write and no drift, and it means an NTP sync
 needs no offset applied to it.
 
-Drift is handled two ways. **Set Time** sets it by hand, in local time.
+Drift is handled three ways. **Set Time** sets it by hand, in local time.
+**Sync BT** sets it from a phone over Bluetooth, with no WiFi involved.
 **Sync NTP** sets it from the internet, on demand from the menu. It also runs
 itself automatically once WiFi credentials have been saved, on a schedule
 that needs both of these to be true: the watch has sat untouched — no button
@@ -297,6 +307,57 @@ That holds even in low power mode: the watch arms a deep-sleep timer against
 the same schedule, wakes itself when a sync falls due, syncs, and goes
 straight back to sleep — the SLEEPING screen already on the panel is never
 touched. It never runs while a clock is counting.
+
+### Setting the clock from a phone
+
+**Sync BT** is for the case WiFi does not cover: a field with no network you
+have credentials for, and a phone in your pocket that knows the time.
+
+The watch is the peripheral. While the screen is open it advertises the
+standard Bluetooth **Current Time Service** (`0x1805`) under `BT_DEVICE_NAME`,
+and the phone connects and *writes* the time into it. That direction is the
+only one that works without an app written for this watch: neither iOS nor
+Android will hand its clock to an arbitrary peripheral that asks for it, but
+writing into a watch's Current Time Service is exactly what the service is
+for. It is the same route the open source PineTime firmware takes, which is
+why the apps that already do it work here unchanged:
+
+| On the phone | What to do |
+| --- | --- |
+| **Gadgetbridge** (Android, F-Droid) | Pair the watch as a generic device; it syncs time to a connected device on its own |
+| **nRF Connect** (Android / iOS) | Connect, open service `0x1805`, write characteristic `0x2A2B` |
+| Anything else that syncs time to a BLE watch | Point it at the Current Time Service |
+
+Two characteristics are accepted, both standard:
+
+| UUID | What it carries |
+| --- | --- |
+| `0x2A2B` Current Time | year, month, day, hour, minute, second — the clock itself |
+| `0x2A0F` Local Time Information | the UTC offset that clock is expressed in |
+
+The first is the one that matters. The second decides how the wall clock a
+phone writes becomes the UTC the RTC holds: with it, the phone's own offset is
+used and the watch's **TZ** setting does not enter into it; without it, the
+time is taken as local to whatever zone the watch is set to, exactly as a time
+typed into **Set Time** would be. Most clients send only the first, which is
+fine as long as the phone and the watch agree about the zone — and the result
+screen says which of the two happened, so an hour out is diagnosable rather
+than mysterious. A write is refused outright if it does not parse or falls
+outside a sane range, so a stray or malformed packet cannot set the clock to
+1970.
+
+Nothing is bonded or encrypted. The only thing a stranger in radio range can
+do is set the watch's clock, and only in the minute the screen is open; that
+is not worth pairing every phone that might want to set it. The radio is up
+only inside that window — `RefBleTime::begin()` starts the controller and
+`end()` takes it back down — so a watch that never opens the screen pays
+nothing for the feature but the flash it occupies.
+
+Automatic sync stays with NTP by default. Set `BT_AUTO_SYNC_SECONDS` above 0
+and a due sync that NTP could not satisfy — no credentials, or a failed
+connection — falls back to advertising for that long, which is worth having
+only if a companion app on a phone syncs time to this watch by itself. The two
+radios are never up at once: WiFi is dropped before Bluetooth starts.
 
 The header clock is repainted on its own partial window when the minute rolls
 over, so keeping it live costs one ~400ms refresh a minute rather than a whole
@@ -320,7 +381,9 @@ watchy-ref-counter/
     ├── RefPanel.h/.cpp    the GxEPD2 panel instance and its pins
     ├── RefDisplay.h/.cpp  screen layout and e-paper refresh strategy
     ├── RefRtc.h/.cpp      DS3231 / PCF8563 / ESP32-S3 clock, over I2C
-    ├── RefClock.h/.cpp    timekeeping, NTP sync, battery, board revision
+    ├── RefClock.h/.cpp    timekeeping, both syncs, battery, board revision
+    ├── RefCtsTime.h/.cpp   the Bluetooth time payloads, host-tested
+    ├── RefBleTime.h/.cpp   the BLE peripheral a phone writes the time to
     ├── RefZone.h/.cpp     US time zones and the daylight saving rule
     ├── RefSegments.h/.cpp  where the countdown digits land, host-tested
     ├── RefSport.h/.cpp     sport presets and the custom slot
@@ -338,6 +401,10 @@ Three libraries, all from the registry:
 | GxEPD2 | the GDEY0154D67 panel, including fast partial update |
 | Adafruit GFX | fonts and primitives |
 | WiFiManager | the captive portal behind "Setup WiFi" |
+
+Bluetooth adds no fourth: the BLE stack and its GATT server come with the
+ESP32 Arduino core, and the Current Time Service is a handful of bytes this
+project encodes itself, in `RefCtsTime.cpp`.
 
 Everything else is either this project's own or comes with the ESP32 Arduino
 core. Notably there is **no RTC library**: the DS3231 and PCF8563 are a handful
@@ -433,6 +500,10 @@ static const char     DEFAULT_TIME_ZONE[] = "Eastern"; // until set in the menu
 static const bool     DEFAULT_DST_AUTO    = true; // apply the US rule by date
 static const uint32_t NTP_RESYNC_HOURS    = 3;  // 0 = only sync by hand
 static const uint32_t NTP_MIN_SYNC_INTERVAL_HOURS = 24; // floor since last try
+static const bool     BT_TIME_SYNC        = true; // false drops the Sync BT row
+static const char     BT_DEVICE_NAME[]    = "Ref Counter"; // as seen by phones
+static const uint32_t BT_SYNC_TIMEOUT_MS  = 60000; // how long it waits
+static const uint32_t BT_AUTO_SYNC_SECONDS = 0; // 0 = manual Bluetooth only
 ```
 
 `DEFAULT_SPORT` and the five `CUSTOM_*` values are likewise only a starting
@@ -517,8 +588,8 @@ minutes; later builds take under a minute.
    V3 needs nothing: selecting an S3 board defines `ARDUINO_ESP32S3_DEV` for
    you. Under PlatformIO this is handled by `build_flags` and no edit is needed.
 
-   Also set *Tools → Partition Scheme* to **Huge APP**, or the WiFi stack will
-   not fit.
+   Also set *Tools → Partition Scheme* to **Huge APP**, or the WiFi and
+   Bluetooth stacks will not fit.
 
 4. **Open and upload.** Open `RefCounter/RefCounter.ino`, select the serial
    port under *Tools → Port*, and hit Upload.
@@ -536,13 +607,14 @@ working, it is a cable or port problem rather than a timing one.
 
 ## Testing
 
-`RefZone.cpp`, `RefSegments.cpp`, `RefSport.cpp`, `RefWifi.cpp` and
-`RefMenuItems.cpp` carry no panel and no GPIO, so they compile on a host and
-the daylight saving rule, the digit layout, the preset table, the WiFi flag and
-the menu's row order are all checked off the watch — this is exactly the kind
-of bug (a changeover date, a digit running off the panel, a clamp, a menu row
-in the wrong place) that is expensive to find on hardware and cheap to catch
-here.
+`RefZone.cpp`, `RefSegments.cpp`, `RefSport.cpp`, `RefWifi.cpp`,
+`RefCtsTime.cpp` and `RefMenuItems.cpp` carry no panel, no GPIO and no radio,
+so they compile on a host and the daylight saving rule, the digit layout, the
+preset table, the WiFi flag, the Bluetooth time payloads and the menu's row
+order are all checked off the watch — this is exactly the kind of bug (a
+changeover date, a digit running off the panel, a clamp, a menu row in the
+wrong place, a Bluetooth packet believed when it should not be) that is
+expensive to find on hardware and cheap to catch here.
 
 ```bash
 ./tests/run.sh
@@ -582,13 +654,25 @@ left in NVS clamps back to the first preset rather than being trusted.
 unavailable — reads as never set up, and that the flag survives a simulated
 reboot in both directions.
 
-`tests/menu_items_test.cpp` pins the menu's row order with and without WiFi
-set up, that **Sync NTP** is absent in the first case and second in the
-second, and that **Setup WiFi** shifts from slot 4 to slot 5 when it appears —
-which is the case the menu's redraw depends on, since running **Setup WiFi**
-inserts a row above the one the user is standing on. It also checks that every
-label fits the 18 glyphs the panel has room for, and that the removed buzz
-test has not crept back in.
+`tests/cts_time_test.cpp` covers the Bluetooth Current Time payloads: the ten
+byte layout a phone writes, every field's range, the month lengths and the
+leap year rule, the year window that throws out a phone whose own clock has
+never been set, the short writes that are still understood and the ones that
+are not, that a rejected write leaves the caller's `struct tm` untouched, and
+that a wrong day-of-week in the packet is recomputed rather than trusted. It
+does the same for Local Time Information — negative zones, half hour zones,
+the "unknown" values — and round-trips what the watch publishes back through
+its own parser, since a phone reading the watch and a phone writing to it must
+agree about the same offset.
+
+`tests/menu_items_test.cpp` pins the menu's row order for all four
+combinations of its two conditional rows, that **Sync NTP** is absent until
+WiFi is set up and **Sync BT** is present from the first boot, and that
+**Setup WiFi** shifts from slot 4 to slot 6 as they appear above it — which is
+the case the menu's redraw depends on, since running **Setup WiFi** inserts a
+row above the one the user is standing on. It also checks that every label fits
+the 18 glyphs the panel has room for, and that the removed buzz test has not
+crept back in.
 
 Nothing else here has automated tests, and none of this has run on hardware —
 see below.
@@ -628,4 +712,24 @@ see below.
 - The daylight saving rule is the current US one, hard-coded. If Congress makes
   daylight saving permanent, this needs a firmware change.
 - Adding WiFi grew the binary from 402KB to 1.13MB and RAM use from 29KB to
-  55KB. Both are comfortably within a 4MB / 320KB device.
+  55KB. Both are comfortably within a 4MB / 320KB device. Bluetooth adds the
+  BLE stack on top of that; the `huge_app` partition leaves room for it, but
+  the exact figure has not been measured here — see below.
+- **The Bluetooth sync has not been run against a phone.** The byte layouts
+  are host-tested and the GATT calls are written to the API that every
+  Arduino-ESP32 backend shares, but nothing has confirmed that a real phone
+  finds the watch, writes to it and lands on the right minute. Nor has the
+  build itself been compiled: the toolchain could not be fetched in the
+  environment this was written in, so the firmware figures above are the
+  pre-Bluetooth ones.
+- A phone will not volunteer its clock. **Sync BT** needs an app on the phone
+  that writes the Current Time Service — Gadgetbridge does it by itself, nRF
+  Connect does it by hand — and there is no route that works from a stock
+  phone with nothing installed.
+- Nothing is bonded or encrypted, so anyone in radio range can set the clock
+  while the **Sync BT** screen is open. That window is a minute long and the
+  worst outcome is a wrong time, which is why it is left open.
+- A phone that sends no zone with the time is assumed to be in the zone the
+  watch is set to. Travel to a different zone with **TZ** left behind and the
+  clock lands an hour or more out; the result screen says which assumption it
+  made.

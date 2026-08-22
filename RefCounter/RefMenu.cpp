@@ -13,6 +13,8 @@
 //   - no "Vibrate Motor" buzz test; the buzzer proves itself every countdown
 //   - "Sync NTP" is only listed once WiFi credentials have been saved, since
 //     with none stored it could only ever report a failure
+//   - "Sync BT" has no counterpart there at all: the watch advertises the
+//     standard Current Time Service and a phone writes the time into it
 //   - colours follow DARK_MODE rather than being fixed black on white
 //   - actions never redraw the menu themselves; open() owns that
 //   - NTP goes through the ESP32 core's SNTP client, not a separate library
@@ -28,6 +30,7 @@
 
 #include "Buttons.h"
 #include "Buzzer.h"
+#include "RefBleTime.h"
 #include "RefDisplay.h"
 #include "RefMenuItems.h"
 #include "RefPanel.h"
@@ -44,10 +47,15 @@ auto &display = RefPanel::display;
 
 const int16_t MENU_ROW_H = 25;
 
-// Rows that fit on the panel at MENU_ROW_H. With WiFi set up the list is one
-// row longer than this, so drawMenu scrolls a window over it, the way
-// pickTimeZone does over the zones; without it the list fits exactly.
+// Rows that fit on the panel at MENU_ROW_H. Both sync rows on offer makes the
+// list two rows longer than this, so drawMenu scrolls a window over it, the
+// way pickTimeZone does over the zones; strip both conditional rows away and
+// it fits exactly.
 const uint8_t MENU_VISIBLE = 7;
+
+// Whether the Bluetooth row is worth offering. A build with no BLE, or with
+// BT_TIME_SYNC off, leaves it out entirely.
+bool btAvailable() { return RefBleTime::supported(); }
 
 // The rows currently on offer, in order, and how many there are. Rebuilt on
 // the way in and after every action, because "Setup WiFi" can add or remove
@@ -184,13 +192,23 @@ void showAbout(RefClock &refClock) {
     display.println("m");
   }
 
+  // Which source last set the clock matters as much as when: an hour out
+  // after a Bluetooth sync means the phone's zone and the watch's disagree,
+  // which is a different fault from a stale NTP sync.
   const time_t sync = refClock.lastSyncEpoch();
+  const char *how   = "";
+  switch (refClock.lastSyncSource()) {
+  case RefClock::SYNC_NTP: how = " NTP"; break;
+  case RefClock::SYNC_BT:  how = " BT"; break;
+  default: break;
+  }
   if (sync == 0) {
-    display.println("NTP: never");
+    display.println("Sync: never");
   } else if (nowEpoch > sync) {
-    display.print("NTP: ");
-    display.print((uint32_t)(nowEpoch - sync) / 3600);
-    display.println("h ago");
+    char line[24];
+    snprintf(line, sizeof(line), "Sync: %uh ago%s",
+             (unsigned)((uint32_t)(nowEpoch - sync) / 3600), how);
+    display.println(line);
   }
 
   const char *rtcName = "none";
@@ -756,6 +774,153 @@ void showSyncNTP(RefClock &refClock) {
   delay(3000);
 }
 
+// The Bluetooth sync screen.
+//
+// Unlike "Sync NTP", which blocks inside one call and reports afterwards,
+// this one has to wait with the panel up: the other half of it is a phone in
+// somebody's hand. So it says what it is waiting for, notices a phone
+// arriving, and takes BACK for an answer.
+//
+// It repaints only when that state changes -- waiting, connected, done --
+// rather than counting a timer down on screen. Every repaint is a partial
+// refresh of the whole panel, and a second-by-second countdown would spend
+// the whole window refreshing e-paper for no information anyone needs.
+void showSyncBluetooth(RefClock &refClock) {
+  // Bring the radio up first, so the panel is painted once with whatever
+  // actually happened rather than showing a "starting" screen for 2.6s.
+  const bool up = RefBleTime::begin();
+
+  beginTextScreen();
+  display.setCursor(0, 30);
+  if (!up) {
+    display.println("Bluetooth failed");
+    display.println("to start.");
+    display.display(false); // full refresh
+    delay(3000);
+    return;
+  }
+
+  // Give a phone that reads the characteristics something true to read.
+  // Skipped when the clock has never been set: there is nothing to publish.
+  struct tm local;
+  if (refClock.localNow(local)) {
+    refClock.publishBleTime(local);
+  }
+
+  display.println("Sync BT");
+  display.println();
+  display.println("Waiting for");
+  display.println("phone. Send the");
+  display.println("time to:");
+  display.println(RefBleTime::deviceName());
+  display.println();
+  display.println("BACK to cancel");
+  display.display(false); // full refresh
+
+  claimButtons();
+
+  bool connected = false;
+  bool cancelled = false;
+  bool received  = false;
+  RefCtsTime::Stamp stamp;
+  RefCtsTime::clear(stamp);
+
+  const uint32_t deadline = millis() + BT_SYNC_TIMEOUT_MS;
+  while ((int32_t)(millis() - deadline) < 0) {
+    if (RefBleTime::take(stamp)) {
+      received = true;
+      break;
+    }
+    if (pressed(PIN_BTN_BACK)) {
+      cancelled = true;
+      break;
+    }
+    // A phone connecting is worth showing: it is the half of the exchange the
+    // watch can confirm, and it tells you to look at the phone rather than at
+    // the watch. Plenty of phones connect, look around and leave again
+    // without writing anything, so this is not a sync in itself.
+    const bool nowConnected = RefBleTime::connected();
+    if (nowConnected != connected) {
+      connected = nowConnected;
+      beginTextScreen();
+      display.setCursor(0, 30);
+      display.println("Sync BT");
+      display.println();
+      if (connected) {
+        display.println("Phone connected.");
+        display.println("Waiting for the");
+        display.println("time...");
+      } else {
+        display.println("Phone left.");
+        display.println("Waiting again");
+        display.println("as:");
+        display.println(RefBleTime::deviceName());
+      }
+      display.println();
+      display.println("BACK to cancel");
+      display.display(true); // partial refresh
+    }
+    delay(BUTTON_POLL_MS);
+  }
+
+  // Radio down before the clock is written and the result drawn: neither
+  // needs it, and a several-second e-paper refresh with the transmitter still
+  // up is battery spent for nothing.
+  RefBleTime::end();
+
+  if (cancelled) {
+    return; // open() redraws the menu; nothing was changed to report
+  }
+
+  beginTextScreen();
+  display.setCursor(0, 30);
+
+  if (!received) {
+    display.println("No time received.");
+    display.println();
+    display.println("Is the phone app");
+    display.println("set to sync time?");
+    // A window that ran its full length and found nothing is a real attempt,
+    // so it counts against the automatic schedule's minimum interval the same
+    // way a failed NTP sync does. A cancelled one is not, which is why this
+    // sits below the early return above.
+    refClock.noteSyncAttempt();
+  } else if (!refClock.applyBleStamp(stamp)) {
+    display.println("Clock write");
+    display.println("failed.");
+  } else {
+    Buzzer::pulse(BUZZ_CONFIRM_MS);
+    display.println("Sync OK. Time is:");
+    struct tm now;
+    if (refClock.localNow(now)) {
+      display.print(now.tm_year + 1900);
+      display.print("/");
+      printTwo(now.tm_mon + 1);
+      display.print("/");
+      printTwo(now.tm_mday);
+      display.print(" ");
+      printTwo(now.tm_hour);
+      display.print(":");
+      printTwo(now.tm_min);
+      display.print(" ");
+      display.println(refClock.zoneAbbrev());
+    }
+    display.println();
+    // Worth saying which zone the conversion used. If the watch ends up an
+    // hour out, this line is the difference between a phone that sent its own
+    // offset and one that left the watch to assume its TZ setting.
+    if (stamp.haveOffset) {
+      display.println("Zone: from phone");
+    } else {
+      display.print("Zone: ");
+      display.println(RefZone::name(RefZone::index()));
+    }
+  }
+
+  display.display(true); // partial refresh
+  delay(3000);
+}
+
 // Hold a result screen until the user backs out of it.
 void waitForBack() {
   pinMode(PIN_BTN_BACK, INPUT);
@@ -776,7 +941,7 @@ void open(RefClock &refClock) {
   // an immediate selection of the first entry.
   Buttons::waitForRelease();
 
-  visibleCount = buildVisible(RefWifi::configured(), visible);
+  visibleCount = buildVisible(RefWifi::configured(), btAvailable(), visible);
   uint8_t slot = 0;
   menuTop = 0;
   drawMenu(slot, false);
@@ -794,6 +959,7 @@ void open(RefClock &refClock) {
       switch (item) {
       case ITEM_ABOUT:    showAbout(refClock); holdResult = true; break;
       case ITEM_SYNC:     showSyncNTP(refClock); break;
+      case ITEM_SYNC_BT:  showSyncBluetooth(refClock); break;
       case ITEM_ZONE:     pickTimeZone(); break;
       case ITEM_DST:
         RefZone::setDstAuto(!RefZone::dstAuto());
@@ -814,7 +980,7 @@ void open(RefClock &refClock) {
       // Setup WiFi can make "Sync NTP" appear above it, which moves that row
       // and every row below it down a slot, so the highlight follows the item
       // the user just ran rather than the slot number it used to sit at.
-      visibleCount = buildVisible(RefWifi::configured(), visible);
+      visibleCount = buildVisible(RefWifi::configured(), btAvailable(), visible);
       const int8_t back = slotOf(visible, visibleCount, item);
       slot = back >= 0 ? (uint8_t)back : 0;
       drawMenu(slot, quickRedraw);
